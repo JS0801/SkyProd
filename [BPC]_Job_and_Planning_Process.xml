@@ -20,7 +20,7 @@
   </initcondition>
   <workflowstates>
     <workflowstate scriptid="workflowstate391">
-      <description>Job Helper</description>
+      <description></description>
       <donotexitworkflow>F</donotexitworkflow>
       <name>State 1</name>
       <positionx>243</positionx>
