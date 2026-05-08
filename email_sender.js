@@ -55,14 +55,30 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime'], (
   }
 
   function renderTxnPdfAsFile(txnId) {
-    const pdfFile = render.transaction({
-      entityId: Number(txnId),
-      printMode: render.PrintMode.PDF
+  const pdfFile = render.transaction({
+    entityId: Number(txnId),
+    printMode: render.PrintMode.PDF
+  });
+
+  // Default fallback name if lookup fails
+  let fileName = `Transaction_${txnId}`;
+  try {
+    const fields = search.lookupFields({
+      type: 'transaction',
+      id: txnId,
+      columns: ['tranid']
     });
-    // Give it a friendlier name
-    pdfFile.name = `Transaction_${txnId}.pdf`;
-    return pdfFile; // File object compatible with email.attachments
+    if (fields && fields.tranid) {
+      // Sanitize: remove characters that are problematic in filenames
+      fileName = String(fields.tranid).trim().replace(/[\\/:*?"<>|]/g, '_');
+    }
+  } catch (e) {
+    log.error('Lookup tranid error', { txnId, error: e.message });
   }
+
+  pdfFile.name = `${fileName}.pdf`;
+  return pdfFile;
+}
 
   function splitRecipients(recipientObjs) {
     const to = [], cc = [], bcc = [];
