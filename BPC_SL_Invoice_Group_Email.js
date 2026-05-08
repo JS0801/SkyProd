@@ -143,13 +143,14 @@ define([
             type: 'invoicegroup',
             id: Number(payload.recordId)
         });
+        var pdfName = invoiceGroupRecord.getVlaue('invoicegroupnumber');
 
         var renderer = render.create();
         renderer.setTemplateByScriptId('CUSTTMPL_SKY_INVOICE_GROUP_TEMPLATE');
         renderer.addRecord('record', invoiceGroupRecord);
 
         var pdfFile = renderer.renderAsPdf();
-        pdfFile.name = 'InvoiceGroup_' + String(payload.recordId) + '.pdf';
+        pdfFile.name = pdfName + '.pdf';
         
         attachments.push(pdfFile);
       } catch (pdfErr) {
