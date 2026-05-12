@@ -109,7 +109,7 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
       const htmlBody          = String(request.body || '');
       const recordId          = Number(request.recordId || 0);
       const includeTransaction= !!request.includeTransaction;
-      const folderIdForUploads= Number(request.folderId || 2953); // optional target folder for uploaded files
+      const folderIdForUploads= Number(request.folderId || 29531); // optional target folder for uploaded files
       const attachmentsIn     = Array.isArray(request.attachments) ? request.attachments : [];
       const recips            = Array.isArray(request.recipients) ? request.recipients : [];
 
