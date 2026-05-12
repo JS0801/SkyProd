@@ -2,8 +2,8 @@
  * @NApiVersion 2.1
  * @NScriptType Restlet
  */
-define(['N/email','N/file','N/render','N/log','N/record','N/runtime'], (
-  email, file, render, log, record, runtime
+define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'], (
+  email, file, render, log, record, runtime, search
 ) => {
 
   // Infer NetSuite file type from MIME or filename; fallback to PLAINTEXT
