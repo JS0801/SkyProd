@@ -2,225 +2,312 @@
 * @NApiVersion 2.1
 * @NScriptType UserEventScript
 */
-define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/runtime', 'N/query'], (ui, search, record, render, file, runtime, query) => {
+define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/runtime', 'N/query', 'N/url'], (ui, search, record, render, file, runtime, query, url) => {
+  
+  function beforeLoad(context) {
+    if (context.type !== context.UserEventType.VIEW) return;
+    const form = context.form;
+    
+    const currRec = context.newRecord;
+    const recId = currRec.id;
+    const recType = currRec.type;
 
-    function beforeLoad(context) {
-        if (context.type !== context.UserEventType.VIEW) return;
-        const form = context.form;
+    // Invoice Groups do not have a class field
+    const isInvoiceGroup = (recType === 'invoicegroup');
+    const classID = isInvoiceGroup ? currRec.getValue('custrecord_invoicegroup_dba') : currRec.getValue('class');
+    const custID = isInvoiceGroup ? currRec.getValue('customer') : currRec.getValue('entity');
 
-        const currRec = context.newRecord;
-        const recId = currRec.id;
-        const custID = currRec.getValue('entity');
-        const classID = currRec.getValue('class');
-        log.debug('custID', custID)
-        log.debug('classID', classID)
+    log.debug('Record Type', recType);
+    log.debug('custID', custID);
+    log.debug('classID', classID);
+    
+    var userId = runtime.getCurrentUser().id;
+    var userEmail = runtime.getCurrentUser().email;
+    var userName = runtime.getCurrentUser().name;
+    log.debug('Current User', runtime.getCurrentUser());
 
-        var userId = runtime.getCurrentUser().id;
-        var userEmail = runtime.getCurrentUser().email;
-        var userName = runtime.getCurrentUser().name;
-        log.debug('Current User', runtime.getCurrentUser());
+    if (isInvoiceGroup) {
+      form.clientScriptModulePath = './BPC_Sky_Email_invgrp_cs.js';
 
-        try {
-            // --- 1) Add button
+      
+
+            var suiteletUrl = url.resolveScript({
+                scriptId: 'customscript_bpc_sl_invoice_group_email',
+                deploymentId: 'customdeploy_bpc_sl_invoice_group_email',
+                returnExternalUrl: true,
+                params: {
+                    recid: String(recId || ''),
+                    rectype: String(recType || ''),
+                    custid: String(custID || ''),
+                    classid: String(classID || ''),
+                    authorid: String(userId || ''),
+                    authorname: String(userName || ''),
+                    authoremail: String(userEmail || '')
+                }
+            });
+
+      var htmlFld = form.addField({
+        id: 'custpage_invgrp_email_popup_html',
+        type: ui.FieldType.INLINEHTML,
+        label: 'Popup HTML'
+      });
+      htmlFld.defaultValue = buildPopupShellHtml();
+
+            var fldUrl = form.addField({
+                id: 'custpage_invgrp_email_sl',
+                type: ui.FieldType.TEXTAREA,
+                label: 'Email Popup URL'
+            });
+            fldUrl.updateDisplayType({
+                displayType: ui.FieldDisplayType.HIDDEN
+            });
+            fldUrl.defaultValue = suiteletUrl || '';
+
             form.addButton({
                 id: 'custpage_btn_email',
                 label: 'Send Email',
-                functionName: 'window.openEmailModal'
+                functionName: 'openInvoiceGroupEmailPopup'
             });
+      return;
+    }
+    
+    try {
+      // --- 1) Add button
+      form.addButton({
+        id: 'custpage_btn_email',
+        label: 'Send Email',
+        functionName: 'window.openEmailModal'
+      });
+      
+      // --- 2) Fetch customer data from NetSuite
+      const customerList = [];
 
-            // --- 2) Fetch customer data from NetSuite
-            const customerList = [];
+      if (custID) {
+        var sql = "SELECT BUILTIN_RESULT.TYPE_INTEGER(entity.ID) AS ID, BUILTIN_RESULT.TYPE_STRING(entity.altname) AS altname, BUILTIN_RESULT.TYPE_STRING(entity.email) AS email FROM entity WHERE entity.email IS NOT NULL AND entity.ID =" + custID;
 
+        var resultSet = query.runSuiteQL({query: sql});
+        var resultsObj = resultSet.asMappedResults();
+        if (resultsObj.length > 0) {
+          var values = resultsObj[0];
+          customerList.push({
+            id: values.id,
+            name: values.altname + " (" + values.email + ")",
+            email: values.email
+          });
+        }
+      }
 
-            var sql = "SELECT BUILTIN_RESULT.TYPE_INTEGER(entity.ID) AS ID, BUILTIN_RESULT.TYPE_STRING(entity.altname) AS altname, BUILTIN_RESULT.TYPE_STRING(entity.email) AS email FROM entity WHERE entity.email IS NOT NULL AND entity.ID =" + custID;
+      // Contact search — for Invoice Group, search contacts linked to the customer entity
+      if (isInvoiceGroup && custID) {
+        var contactSearchObj = search.create({
+          type: "contact",
+          filters: [
+            ["company", "anyof", custID],
+            "AND",
+            ["email", "isnotempty", ""]
+          ],
+          columns: [
+            search.createColumn({name: "internalid", label: "Internal ID"}),
+            search.createColumn({name: "entityid", label: "Name"}),
+            search.createColumn({name: "email", label: "Email"})
+          ]
+        });
+        contactSearchObj.run().each(function(result) {
+          log.debug('result', result);
+          var contactID = result.getValue({name: "internalid"});
+          var contactName = result.getValue({name: "entityid"});
+          var contactEmail = result.getValue({name: "email"});
 
-            // Run the query
-            var resultSet = query.runSuiteQL({ query: sql });
+          customerList.push({
+            id: contactID,
+            name: contactName + " (" + contactEmail + ")",
+            email: contactEmail
+          });
 
-            var resultsObj = resultSet.asMappedResults();
-            if (resultsObj.length > 0) {
-                var values = resultsObj[0];
-                customerList.push({
-                    id: values.id,
-                    name: values.altname + " (" + values.email + ")",
-                    email: values.email
-                });
+          return true;
+        });
+      } else {
+        // Original contact search for standard transactions (linked via transaction)
+        var contactSearchObj = search.create({
+          type: "contact",
+          filters: [
+            ["transaction.internalid", "anyof", recId],
+            "AND",
+            ["email", "isnotempty", ""]
+          ],
+          columns: [
+            search.createColumn({name: "internalid", label: "Internal ID"}),
+            search.createColumn({name: "entityid", label: "Name"}),
+            search.createColumn({name: "email", label: "Email"})
+          ]
+        });
+        contactSearchObj.run().each(function(result) {
+          log.debug('result', result);
+          var contactID = result.getValue({name: "internalid"});
+          var contactName = result.getValue({name: "entityid"});
+          var contactEmail = result.getValue({name: "email"});
+
+          customerList.push({
+            id: contactID,
+            name: contactName + " (" + contactEmail + ")",
+            email: contactEmail
+          });
+
+          return true;
+        });
+      }
+      
+      var employeeList = [];
+      var defaultID = null;
+      
+      // Classification/Author lookup — only for records that have a class field
+      if (!isInvoiceGroup) {
+        var classificationSearchObj = search.create({
+          type: "classification",
+          filters: [
+            ["isinactive", "is", "F"]
+          ],
+          columns: [
+            search.createColumn({
+              name: "internalid",
+              label: "Internal ID"
+            }),
+            search.createColumn({
+              name: "internalid",
+              join: "CUSTRECORD_BPC_EMAIL_AUTHOR",
+              label: "Internal ID"
+            }),
+            search.createColumn({
+              name: "entityid",
+              join: "CUSTRECORD_BPC_EMAIL_AUTHOR",
+              label: "Name"
+            }),
+            search.createColumn({
+              name: "email",
+              join: "CUSTRECORD_BPC_EMAIL_AUTHOR",
+              label: "Email"
+            })
+          ]
+        });
+        var searchResultCount = classificationSearchObj.runPaged().count;
+        classificationSearchObj.run().each(function(result) {
+          
+          var listObj = {
+            name: result.getValue({name: "entityid", join: "CUSTRECORD_BPC_EMAIL_AUTHOR"}),
+            email: result.getValue({name: "email", join: "CUSTRECORD_BPC_EMAIL_AUTHOR"}),
+            id: result.getValue({name: "internalid", join: "CUSTRECORD_BPC_EMAIL_AUTHOR"})
+          };
+          if (classID && classID == result.getValue({name: "internalid"})) {
+            listObj.default = true;
+            defaultID = result.getValue({name: "internalid", join: "CUSTRECORD_BPC_EMAIL_AUTHOR"});
+          }
+          employeeList.push(listObj);
+          
+          return true;
+        });
+      }
+      
+      // Always add the current user as a fallback author
+      var obj = {
+        name: userName,
+        email: userEmail,
+        id: userId
+      };
+      if (!defaultID) obj.default = true;
+      employeeList.push(obj);
+      
+      
+      if (employeeList.length == 0) return;
+      
+      log.debug('employeeList', employeeList);
+      
+      const emailTemplateList = [];
+      try {
+        search.create({
+          type: 'emailtemplate',
+          filters: [
+            ["isinactive", "is", "F"]
+          ],
+          columns: [
+            'name',
+            'internalid'
+          ]
+        }).run().each(function(result) {
+          emailTemplateList.push({
+            id: result.getValue('internalid'),
+            name: result.getValue('name')
+          });
+          return true;
+        });
+      } catch (e) {
+        log.error({
+          title: 'Email Template Search Error',
+          details: e
+        });
+      }
+      
+      // --- Pre-merge all templates server-side (once) ---
+      const preMergedById = {};
+      try {
+        const txnId = context.newRecord.id;
+        const entityId = custID;
+        
+        emailTemplateList.forEach(t => {
+          try {
+            // For Invoice Group, we may not be able to pass transactionId
+            // since render.mergeEmail may not support invoicegroup type.
+            // We still attempt it; if it fails, we fall back to entity-only merge.
+            let merged;
+            try {
+              merged = render.mergeEmail({
+                templateId: Number(t.id),
+                transactionId: isInvoiceGroup ? null : (Number(txnId) || null),
+                entityId: Number(entityId) || null
+              });
+            } catch (mergeErr) {
+              // Fallback: merge with entity only (no transaction context)
+              log.debug('Merge fallback for template ' + t.id, mergeErr.message);
+              merged = render.mergeEmail({
+                templateId: Number(t.id),
+                entityId: Number(entityId) || null
+              });
             }
-
-
-
-
-            var contactSearchObj = search.create({
-                type: "contact",
-                filters:
-                    [
-                        ["transaction.internalid", "anyof", recId],
-                        "AND",
-                        ["email", "isnotempty", ""]
-                    ],
-                columns:
-                    [
-                        search.createColumn({ name: "internalid", label: "Internal ID" }),
-                        search.createColumn({ name: "entityid", label: "Name" }),
-                        search.createColumn({ name: "email", label: "Email" })
-                    ]
-            });
-            contactSearchObj.run().each(function (result) {
-                log.debug('result', result)
-                var contactID = result.getValue({ name: "internalid" });
-                var contactName = result.getValue({ name: "entityid" });
-                var contactEmail = result.getValue({ name: "email" });
-
-                customerList.push({
-                    id: contactID,
-                    name: contactName + " (" + contactEmail + ")",
-                    email: contactEmail
-                });
-
-                return true;
-            });
-
-            var employeeList = [];
-            var defaultID = null;
-
-
-            var classificationSearchObj = search.create({
-                type: "classification",
-                filters:
-                    [
-                        ["isinactive", "is", "F"]
-                    ],
-                columns:
-                    [
-                        search.createColumn({
-                            name: "internalid",
-                            label: "Internal ID"
-                        }),
-                        search.createColumn({
-                            name: "internalid",
-                            join: "CUSTRECORD_BPC_EMAIL_AUTHOR",
-                            label: "Internal ID"
-                        }),
-                        search.createColumn({
-                            name: "entityid",
-                            join: "CUSTRECORD_BPC_EMAIL_AUTHOR",
-                            label: "Name"
-                        }),
-                        search.createColumn({
-                            name: "email",
-                            join: "CUSTRECORD_BPC_EMAIL_AUTHOR",
-                            label: "Email"
-                        })
-                    ]
-            });
-            var searchResultCount = classificationSearchObj.runPaged().count;
-            classificationSearchObj.run().each(function (result) {
-
-                var listObj = {
-                    name: result.getValue({ name: "entityid", join: "CUSTRECORD_BPC_EMAIL_AUTHOR" }),
-                    email: result.getValue({ name: "email", join: "CUSTRECORD_BPC_EMAIL_AUTHOR" }),
-                    id: result.getValue({ name: "internalid", join: "CUSTRECORD_BPC_EMAIL_AUTHOR" })
-                };
-                if (classID && classID == result.getValue({ name: "internalid" })) {
-                    listObj.default = true;
-                    defaultID = result.getValue({ name: "internalid", join: "CUSTRECORD_BPC_EMAIL_AUTHOR" });
-                }
-                employeeList.push(listObj)
-
-                return true;
-            });
-
-            var obj = {
-                name: userName,
-                email: userEmail,
-                id: userId
+            preMergedById[String(t.id)] = {
+              subject: merged.subject || '',
+              body: merged.body || ''
             };
-            if (!defaultID) obj.default = true;
-            employeeList.push(obj);
-
-
-            if (employeeList.length == 0) return;
-
-            log.debug('employeeList', employeeList);
-
-            const emailTemplateList = [];
-            try {
-                search.create({
-                    type: 'emailtemplate',
-                    filters: [
-                        ["isinactive", "is", "F"]
-                    ],
-                    columns: [
-                        'name',
-                        'internalid' // Fetch the internal ID
-                    ]
-                }).run().each(function (result) {
-                    emailTemplateList.push({
-                        id: result.getValue('internalid'),
-                        name: result.getValue('name')
-                    });
-                    return true;
-                });
-            } catch (e) {
-                log.error({
-                    title: 'Email Template Search Error',
-                    details: e
-                });
-            }
-
-            // --- Pre-merge all templates server-side (once) ---
-            const preMergedById = {};
-            try {
-                // We have the current record ID (transaction) already:
-                const txnId = context.newRecord.id;
-                const entityId = custID; // customer id, if needed by the template
-
-                emailTemplateList.forEach(t => {
-                    try {
-                        const merged = render.mergeEmail({
-                            templateId: Number(t.id),
-                            transactionId: Number(txnId) || null,   // works for SO, Invoice, etc.
-                            entityId: Number(entityId) || null      // helps when template uses entity tokens
-                        });
-                        preMergedById[String(t.id)] = {
-                            subject: merged.subject || '',
-                            body: merged.body || ''
-                        };
-                    } catch (e) {
-                        // Don’t break the UI if one template fails—log and continue.
-                        log.error('Template merge error for ' + t.id, e);
-                        preMergedById[String(t.id)] = { subject: '', body: '' };
-                    }
-                });
-            } catch (e) {
-                log.error('Pre-merge block failed', e);
-            }
-
-            // Serialize for the client
-            const preMergedJson = JSON.stringify(preMergedById);
-
-
-            // Serialize the customer data to be passed to the client
-            const customerDataJson = JSON.stringify(customerList);
-            const emailTemplateDataJson = JSON.stringify(emailTemplateList);
-            const employeeDataJson = JSON.stringify(employeeList);
-            // const fileDataJson = JSON.stringify(fileList);
-
-            log.debug('customerDataJson', customerDataJson);
-            log.debug('emailTemplateDataJson', emailTemplateDataJson);
-            log.debug('employeeDataJson', employeeDataJson);
-
-            // --- 3) Add inline HTML (popup markup + script)
-            const fld = form.addField({
-                id: 'custpage_email_html',
-                type: ui.FieldType.INLINEHTML,
-                label: 'Email HTML'
-            });
-
-            // Get the record ID from the URL query parameters
-            const recordId = context.newRecord.id;
-
-            fld.defaultValue = `
+          } catch (e) {
+            log.error('Template merge error for ' + t.id, e);
+            preMergedById[String(t.id)] = { subject: '', body: '' };
+          }
+        });
+      } catch (e) {
+        log.error('Pre-merge block failed', e);
+      }
+      
+      const preMergedJson = JSON.stringify(preMergedById);
+      
+      const customerDataJson = JSON.stringify(customerList);
+      const emailTemplateDataJson = JSON.stringify(emailTemplateList);
+      const employeeDataJson = JSON.stringify(employeeList);
+      
+      log.debug('customerDataJson', customerDataJson);
+      log.debug('emailTemplateDataJson', emailTemplateDataJson);
+      log.debug('employeeDataJson', employeeDataJson);
+      
+      // --- 3) Add inline HTML (popup markup + script)
+      const fld = form.addField({
+        id: 'custpage_email_html',
+        type: ui.FieldType.INLINEHTML,
+        label: 'Email HTML'
+      });
+      
+      const recordId = context.newRecord.id;
+      
+      // Pass record type and isInvoiceGroup flag to the client
+      const recTypeStr = JSON.stringify(recType);
+      
+      fld.defaultValue = `
       <style>
       /* Updated NetSuite-like color palette */
       :root{
@@ -525,7 +612,7 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
       <label>Attach Document </label>
       <div style="display:flex;gap:10px;align-items:center">
       <label style="font-weight:normal">
-      <input id="nsIncTxn" type="checkbox"> INCLUDE TRANSACTION
+      <input id="nsIncTxn" type="checkbox"> INCLUDE RECORD PDF
       </label>
       </div>
       </div>
@@ -571,11 +658,11 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
       
       <script>
       (function (w) {
-        // Store the record ID for redirection
+        // Store the record ID and type for the RESTlet
         w.nsRecordId = ` + recordId + `;
+        w.nsRecordType = ${recTypeStr};
         w.nsAccountUrl = window.location.protocol + '//' + window.location.hostname;
         
-        // The customer data is injected here from the server-side
         const customers = JSON.parse(\`${customerDataJson}\`);
         const emailTemplates = JSON.parse(\`${emailTemplateDataJson}\`);
         const employees = JSON.parse(\`${employeeDataJson}\`);
@@ -587,7 +674,7 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
         if (addRecSelect) {
           customers.forEach(customer => {
             const option = document.createElement('option');
-            option.value = customer.name; // Use name as value
+            option.value = customer.name;
             option.textContent = customer.name;
             addRecSelect.appendChild(option);
           });
@@ -615,7 +702,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
           if (emailInput) {
             emailInput.value = primaryCustomer.email;
             
-            // Also add it to the table automatically
             const tableBody = document.querySelector('#nsRecTable tbody');
             
             const newRow = tableBody.insertRow();
@@ -640,7 +726,7 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
         if (employeeInput) {
           employees.forEach(emp => {
             const option = document.createElement('option');
-            option.value = String(emp.id);                 // <-- INTERNAL ID here
+            option.value = String(emp.id);
             option.textContent = emp.name + (emp.email ? ' (' + emp.email + ')' : '');
             
             if (emp.default === true) option.selected = true;
@@ -652,7 +738,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
         // Populate the email template dropdown
         const templateSelect = document.getElementById('nsTpl');
         if (templateSelect) {
-          // Add a default blank option
           const defaultOption = document.createElement('option');
           defaultOption.value = '';
           defaultOption.textContent = '- Select -';
@@ -660,7 +745,7 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
           
           emailTemplates.forEach(template => {
             const option = document.createElement('option');
-            option.value = template.id; // Use internal ID as value
+            option.value = template.id;
             option.textContent = template.name;
             templateSelect.appendChild(option);
           });
@@ -696,7 +781,7 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
         w.closeEmailModal = function(){
           var modal = document.getElementById('nsEmailOverlay');
           if (modal) {
-            modal.style.display = 'none'; // hides it
+            modal.style.display = 'none';
           }
         };
         
@@ -738,12 +823,12 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
         // ----------------------------------------------
         // File picker + attachment table management
         // ----------------------------------------------
-        w.nsPickedFiles = []; // [{name, type, size, lastModified, dataUrl(base64)}]
+        w.nsPickedFiles = [];
         
         w.nsOpenFilePicker = function () {
           var fp = document.getElementById('nsFilePicker');
           if (!fp) return;
-          fp.value = ''; // reset
+          fp.value = '';
           fp.onchange = function (e) {
             var files = Array.from(e.target.files || []);
             if (!files.length) return;
@@ -753,11 +838,9 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
         };
         
         w.nsReadAndAppendFiles = function (files) {
-          // Read sequentially to avoid memory spikes
           (function next(i){
             if (i >= files.length) return;
             var f = files[i];
-            // Soft guardrail: skip super large files (>15MB) to keep JSON payload reasonable
             if (f.size > 15 * 1024 * 1024) {
               alert('Skipping "' + f.name + '" (over 15MB).');
               return next(i+1);
@@ -765,7 +848,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
             var rdr = new FileReader();
             rdr.onload = function (ev) {
               var dataUrl = String(ev.target.result || '');
-              // dataURL: "data:<mime>;base64,XXXXX"
               var entry = {
                 name: f.name,
                 type: f.type || 'application/octet-stream',
@@ -794,12 +876,11 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
           
           td0.innerHTML = '<input type="checkbox">';
           td1.textContent = fileEntry.name;
-          td2.textContent = 'Email Dropbox'; // folder unknown until RESTlet saves it
-          td3.textContent = Math.round(fileEntry.size / 1024); // KB
+          td2.textContent = 'Email Dropbox';
+          td3.textContent = Math.round(fileEntry.size / 1024);
           td4.textContent = new Date(fileEntry.lastModified).toLocaleString();
           td5.textContent = fileEntry.type;
           
-          // tag row to the file name (unique enough for UI purposes)
           tr.setAttribute('data-fname', fileEntry.name + '|' + fileEntry.size);
         };
         
@@ -839,7 +920,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
             return;
           }
           
-          // Prevent duplicates
           const existingEmails = Array.from(tableBody.querySelectorAll('td:nth-child(2)'))
           .map(td => td.textContent.trim());
           if (existingEmails.includes(emailValue)) {
@@ -847,7 +927,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
             return;
           }
           
-          // Insert new row
           const newRow = tableBody.insertRow();
           const checkboxCell = newRow.insertCell();
           const emailCell = newRow.insertCell();
@@ -863,7 +942,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
           
           newRow.setAttribute('data-email', emailValue);
           
-          // Reset
           emailInput.value = '';
           roleSelect.value = 'TO';
           emailInput.focus();
@@ -896,10 +974,9 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
           });
         };
         
-        // Placeholder functions for Attachments and main actions
-        w.nsAddAttachment = function(){ /* Logic for adding attachments will go here */ };
-        w.nsClearAttachments = function(){ /* Logic for clearing attachments will go here */ };
-        w.nsPreview = function(){ /* Logic for previewing email will go here */ };
+        w.nsAddAttachment = function(){};
+        w.nsClearAttachments = function(){};
+        w.nsPreview = function(){};
         
         // Show/hide + update text
         w.nsShowLoader = function (text) {
@@ -908,7 +985,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
           var t = document.getElementById('nsEmailLoaderText');
           if (t) t.textContent = text || 'Working…';
           o.style.display = 'flex';
-          // prevent double click
           var topBtn = document.getElementById('nsSendTop');
           var botBtn = document.getElementById('nsSendBottom');
           if (topBtn) topBtn.disabled = true;
@@ -928,13 +1004,10 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
         };
         
         w.nsMergeSend = function () {
-          // 1) Show loader **immediately** so it paints first
           w.nsShowLoader('Preparing email…');
           
-          // 2) Defer heavy/validation work to the next frame so the loader is visible
           requestAnimationFrame(function () {
             try {
-              // ---- VALIDATIONS ----
               const authorSel = document.getElementById('nsEmployeeSel');
               const authorId  = authorSel ? authorSel.value : '';
               if (!authorId) {
@@ -965,10 +1038,8 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
                 return;
               }
               
-              // ---- BUILD PAYLOAD (can be heavy) ----
               w.nsSetLoaderText('Collecting attachments…');
               
-              // Build attachments (strip dataURL prefix → base64 only)
               var attachments = (w.nsPickedFiles || []).map(function (f) {
                 var idx = String(f.dataUrl || '').indexOf('base64,');
                 var b64 = idx > -1 ? f.dataUrl.substring(idx + 7) : '';
@@ -986,6 +1057,7 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
               const payload = {
                 author: Number(authorId),
                 recordId: w.nsRecordId,
+                recordType: w.nsRecordType,   // <-- pass record type to RESTlet
                 subject: subject,
                 body: bodyHtml,
                 recipients: recipients,
@@ -993,17 +1065,15 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
                 attachments: attachments
               };
               
-              // ---- SEND TO RESTLET ----
               w.nsSetLoaderText('Sending email…');
               
-              fetch('/app/site/hosting/restlet.nl?script=2382&deploy=1', {
+              fetch('/app/site/hosting/restlet.nl?script=3030&deploy=1', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'same-origin',
                 body: JSON.stringify(payload)
               })
               .then(function (res) {
-                // Keep loader up while parsing
                 w.nsSetLoaderText('Processing response…');
                 return res.json();
               })
@@ -1014,7 +1084,7 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
                   window.location.reload();
                 } else {
                   var msg = (response && (response.message || response.error)) || 'Unknown error';
-                  alert('Failed to send email: ' + msg);
+                  alert('Failed to send email: ' + JSON.stringify(msg));
                 }
               })
               .catch(function (err) {
@@ -1022,12 +1092,10 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
                 alert('Error sending email. Check logs.');
               })
               .finally(function () {
-                // Loader always hides at the very end
                 w.nsHideLoader();
               });
               
             } catch (e) {
-              // Any synchronous error: hide loader and report
               w.nsHideLoader();
               console.error('nsMergeSend fatal error:', e);
               alert('Unexpected error. Check logs.');
@@ -1042,12 +1110,36 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
       })(window);
       </script>
       `;
-
-
-        } catch (e) {
-            log.error('error', e)
-        }
+      
+      
+    } catch (e) {
+      log.error('error', e)
     }
+  }
 
-    return { beforeLoad };
+   function buildPopupShellHtml() {
+    return ''
+      + '<style>'
+      + '#bpcInvGrpEmailOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:999999;}'
+      + '#bpcInvGrpEmailModal{width:1100px;max-width:96vw;height:85vh;background:#fff;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.35);overflow:hidden;display:flex;flex-direction:column;}'
+      + '#bpcInvGrpEmailHeader{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #d5d9de;background:#f7f8fa;font-family:Arial,sans-serif;}'
+      + '#bpcInvGrpEmailHeaderTitle{font-size:16px;font-weight:600;color:#222;}'
+      + '#bpcInvGrpEmailClose{border:none;background:transparent;font-size:18px;cursor:pointer;color:#666;}'
+      + '#bpcInvGrpEmailFrameWrap{flex:1;min-height:0;background:#fff;}'
+      + '#bpcInvGrpEmailFrame{width:100%;height:100%;border:none;background:#fff;}'
+      + '</style>'
+      + '<div id="bpcInvGrpEmailOverlay">'
+      + '  <div id="bpcInvGrpEmailModal">'
+      + '    <div id="bpcInvGrpEmailHeader">'
+      + '      <div id="bpcInvGrpEmailHeaderTitle">Send Email</div>'
+      + '      <button type="button" id="bpcInvGrpEmailClose">&#10006;</button>'
+      + '    </div>'
+      + '    <div id="bpcInvGrpEmailFrameWrap">'
+      + '      <iframe id="bpcInvGrpEmailFrame" src="about:blank"></iframe>'
+      + '    </div>'
+      + '  </div>'
+      + '</div>';
+  }
+  
+  return { beforeLoad };
 });
