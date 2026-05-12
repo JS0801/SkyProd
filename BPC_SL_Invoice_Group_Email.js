@@ -41,6 +41,8 @@ define([
     var authorName = req.parameters.authorname || '';
     var authorEmail = req.parameters.authoremail || '';
     log.debug('classId', classId)
+    log.debug('authorId', authorId)
+    log.debug('customerId', customerId)
 
     if (!recId) {
       context.response.write('Missing Invoice Group ID.');
@@ -82,6 +84,7 @@ define([
   function handlePost(context) {
     var req = context.request;
     var payloadText = req.parameters.custpage_email_payload || '';
+    log.debug('Post Param', req.parameters)
 
     if (!payloadText) {
       writeScriptResponse(context, false, 'Missing payload.');
@@ -96,7 +99,7 @@ define([
       return;
     }
 
-    var custID = payload.custId || '';
+    var custID = req.parameters.custid || '';
     var toList = [];
     var ccList = [];
     var bccList = [];
@@ -140,13 +143,14 @@ define([
             type: 'invoicegroup',
             id: Number(payload.recordId)
         });
+        var pdfName = invoiceGroupRecord.getVlaue('invoicegroupnumber');
 
         var renderer = render.create();
-        renderer.setTemplateByScriptId('CUSTTMPL_322_1317239_SB1_493');
+        renderer.setTemplateByScriptId('CUSTTMPL_SKY_INVOICE_GROUP_TEMPLATE');
         renderer.addRecord('record', invoiceGroupRecord);
 
         var pdfFile = renderer.renderAsPdf();
-        pdfFile.name = 'InvoiceGroup_' + String(payload.recordId) + '.pdf';
+        pdfFile.name = pdfName + '.pdf';
         
         attachments.push(pdfFile);
       } catch (pdfErr) {
@@ -165,6 +169,8 @@ define([
         attachments: attachments,
         relatedRecords: { entityId: custID }
       });
+
+      log.debug('custID', custID)
 
       writeScriptResponse(context, true, 'Email sent successfully.');
     } catch (sendErr) {
@@ -379,7 +385,7 @@ define([
                 return true;
             });
         }
-      log.debug('pushEmployee', pushEmployee)
+      log.debug('employeeList', employeeList)
     } catch (e) {
         log.error('getEmployeeList classification search error', e);
     }
@@ -507,6 +513,7 @@ define([
       + '<div id="nsEmailRoot">'
       + '  <div id="nsEmailCard">'
       + '    <form id="nsEmailForm" method="POST">'
+      + '      <input type="hidden" name="custpage_email_payload" id="custpage_email_payload" />'
 
       + '      <div id="nsEmailToolbarTop">'
       + '        <button id="nsSendTop" type="button" class="ns-btn primary">Merge &amp; Send</button>'
