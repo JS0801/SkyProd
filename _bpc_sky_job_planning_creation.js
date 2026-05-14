@@ -29,7 +29,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
             });
             const searchResultCount = customrecord_sky_jobSearchObj.runPaged().count;
             log.debug("customrecord_sky_jobSearchObj result count", searchResultCount);
-            if (searchResultCount > 0) return;
+          //  if (searchResultCount > 0) return;
 
             const soRec = record.load({ type: 'salesorder', id: soId })
 
