@@ -338,6 +338,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                         });
 
                     }
+                   log.debug('jobRecId', jobRecId)
 
                     var s = search.create({
                         type: 'customrecord_sky_job',
@@ -358,7 +359,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                             search.createColumn({
                                 name: "formulatext",
                                 summary: "GROUP",
-                                formula: "CASE  WHEN {custrecord_bpc_planning_job.custrecord_bpc_planning_op_name} LIKE '%Run%' THEN 1 ELSE 0 END",
+                                formula: "CASE   WHEN {custrecord_bpc_planning_job.custrecord_bpc_planning_op_name} != 'Machine Cutting Run' AND {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} IN   ('Traditional', 'Traditional : Screen Print', 'Traditional : Pad Print', 'Hi-Speed', 'Digital ')   THEN 'Regular' WHEN {custrecord_bpc_planning_job.custrecord_bpc_planning_op_name} = 'Machine Cutting Run' AND {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Digital '   THEN 'CUT'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Hot Stamp'   THEN 'HO'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Emboss'   THEN 'EM'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Deboss'   THEN 'DE'END",                                
                                 label: "Machine"
                             }),
                             // search.createColumn({
