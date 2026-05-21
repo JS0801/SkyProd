@@ -475,7 +475,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
                     log.debug('Grouped rows', JSON.stringify(updateObj));
 
-                    if (headerMachine && jobRecId) updateObj.custrecord_sky_job_machine = headerMachine;
+                   // if (headerMachine && jobRecId) updateObj.custrecord_sky_job_machine = headerMachine;
 
                     // --------- If we found a mismatch -> submitFields ----------
                     if (Object.keys(updateObj).length) {
