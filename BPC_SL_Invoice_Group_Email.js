@@ -143,7 +143,7 @@ define([
             type: 'invoicegroup',
             id: Number(payload.recordId)
         });
-        var pdfName = invoiceGroupRecord.getVlaue('invoicegroupnumber');
+        var pdfName = invoiceGroupRecord.getValue('invoicegroupnumber');
 
         var renderer = render.create();
         renderer.setTemplateByScriptId('CUSTTMPL_SKY_INVOICE_GROUP_TEMPLATE');
