@@ -89,6 +89,7 @@ define(['N/search', 'N/log'], (search, log) => {
             machine,
             parentItem
         });
+        log.debug('rateInfo', rateInfo)
 
         if (isSetup) {
             setCurrentLineValue(rec, FLD_RUN_RATE, '');
