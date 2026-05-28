@@ -79,6 +79,12 @@ define(['N/search', 'N/log'], (search, log) => {
             fieldId: HEADER_PARENT_ITEM
         });
 
+        log.debug('qty', qty)
+        log.debug('isSetup', isSetup)
+        log.debug('parentItem', parentItem)
+        log.debug('routingItem', routingItem)
+        log.debug('machine', machine)
+
         if (!machine || !routingItem || !parentItem) {
             clearRunRateFields(rec);
             return;
@@ -163,6 +169,7 @@ define(['N/search', 'N/log'], (search, log) => {
             additionalRate: null,
             setupTime: null
         };
+        log.debug('results', results)
 
         results.forEach(result => {
             const typeText =
