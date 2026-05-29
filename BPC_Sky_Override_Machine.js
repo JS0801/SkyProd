@@ -32,10 +32,10 @@ define(['N/search', 'N/log'], (search, log) => {
 
         const rec = context.currentRecord;
 
-        if (context.fieldId === FLD_OVERRIDE) {
-            toggleMachineField(rec);
-            return;
-        }
+        // if (context.fieldId === FLD_OVERRIDE) {
+        //     toggleMachineField(rec);
+        //     return;
+        // }
 
         if (context.fieldId === FLD_MACHINE) {
             updateRunRateAndPlannedTime(rec);
