@@ -183,7 +183,7 @@ define(['N/search', 'N/record', 'N/log'], function (search, record, log) {
         jobRec.selectLine({ sublistId: 'recmachcustrecord_bpc_planning_job', line: i});
         let lineMachine = null;
         let lineItem = null;
-        let lineOverMachine = null;
+     //   let lineOverMachine = null;
         let lineRR = null;
         let key = null;
         let master = 2;
@@ -192,12 +192,12 @@ define(['N/search', 'N/record', 'N/log'], function (search, record, log) {
 
         lineMachine = jobRec.getCurrentSublistValue({ sublistId: 'recmachcustrecord_bpc_planning_job', fieldId: 'custrecord_bpc_planning_machine' });
         lineItem = jobRec.getCurrentSublistValue({ sublistId: 'recmachcustrecord_bpc_planning_job', fieldId: 'custrecord_bpc_wo_item' });
-        lineOverMachine = jobRec.getCurrentSublistValue({ sublistId: 'recmachcustrecord_bpc_planning_job', fieldId: 'custrecord_override_machine' });
+      //  lineOverMachine = jobRec.getCurrentSublistValue({ sublistId: 'recmachcustrecord_bpc_planning_job', fieldId: 'custrecord_override_machine' });
         lineRR = jobRec.getCurrentSublistValue({ sublistId: 'recmachcustrecord_bpc_planning_job', fieldId: 'custrecord_bpc_sky_planning_run_rate' });
         setup = jobRec.getCurrentSublistValue({ sublistId: 'recmachcustrecord_bpc_planning_job', fieldId: 'custrecord_setup_operation' });
        
         if (lineItem == jobRec.getValue('custrecord_sky_parent_item')) master = 1;
-        if (changMachine && !lineOverMachine && lineMachine) lineMachine = jobRec.getValue('custrecord_sky_job_machine');
+        if (changMachine && lineMachine) lineMachine = jobRec.getValue('custrecord_sky_job_machine');
         key = lineMachine + '~~' + lineItem + '~~' + master;
         if (dataObj && dataObj.hasOwnProperty(key) && !setup) newRR = dataObj[key];
         if (!setup && newRR == null) {
