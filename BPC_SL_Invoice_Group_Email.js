@@ -390,6 +390,15 @@ define([
         log.error('getEmployeeList classification search error', e);
     }
 
+        if (passedAuthor && passedAuthor.id) {
+        pushEmployee(
+            passedAuthor.id,
+            passedAuthor.name,
+            passedAuthor.email,
+            !defaultID
+        );
+    }
+
 
     // --- Pull in all employees flagged as email authors (custentity_bpc_email_author) ---
     try {
@@ -398,7 +407,9 @@ define([
             filters: [
                 ["custentity_bpc_email_author", "is", "T"],
                 "AND",
-                ["isinactive", "is", "F"]
+                ["isinactive", "is", "F"],
+            "AND",
+            ["email", "isnotempty", ""]
             ],
             columns: [
                 search.createColumn({ name: "internalid", label: "Internal ID" }),
@@ -420,25 +431,7 @@ define([
         log.error('getEmployeeList email author search error', e);
     }
 
-    if (passedAuthor && passedAuthor.id) {
-        pushEmployee(
-            passedAuthor.id,
-            passedAuthor.name,
-            passedAuthor.email,
-            !defaultID
-        );
-    }
-    return employeeList;
-}
 
-    if (passedAuthor && passedAuthor.id) {
-        pushEmployee(
-            passedAuthor.id,
-            passedAuthor.name,
-            passedAuthor.email,
-            !defaultID
-        );
-    }
 
     return employeeList;
 }
