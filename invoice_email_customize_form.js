@@ -213,7 +213,9 @@ try {
     filters: [
       ["custentity_bpc_email_author", "is", "F"],
       "AND",
-      ["isinactive", "is", "F"]
+      ["isinactive", "is", "F"],
+            "AND",
+            ["email", "isnotempty", ""]
     ],
     columns: [
       search.createColumn({ name: "internalid", label: "Internal ID" }),
