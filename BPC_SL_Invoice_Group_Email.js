@@ -390,6 +390,47 @@ define([
         log.error('getEmployeeList classification search error', e);
     }
 
+
+    // --- Pull in all employees flagged as email authors (custentity_bpc_email_author) ---
+    try {
+        var emailAuthorSearch = search.create({
+            type: "employee",
+            filters: [
+                ["custentity_bpc_email_author", "is", "T"],
+                "AND",
+                ["isinactive", "is", "F"]
+            ],
+            columns: [
+                search.createColumn({ name: "internalid", label: "Internal ID" }),
+                search.createColumn({ name: "entityid",   label: "Name" }),
+                search.createColumn({ name: "email",       label: "Email" })
+            ]
+        });
+        emailAuthorSearch.run().each(function (result) {
+            var empId    = result.getValue({ name: "internalid" });
+            var empName  = result.getValue({ name: "entityid" });
+            var empEmail = result.getValue({ name: "email" });
+
+            // Don't mark these as default — default is owned by the class author / passedAuthor
+            pushEmployee(empId, empName, empEmail, false);
+            return true;
+        });
+        log.debug('employeeList after email authors', employeeList);
+    } catch (e) {
+        log.error('getEmployeeList email author search error', e);
+    }
+
+    if (passedAuthor && passedAuthor.id) {
+        pushEmployee(
+            passedAuthor.id,
+            passedAuthor.name,
+            passedAuthor.email,
+            !defaultID
+        );
+    }
+    return employeeList;
+}
+
     if (passedAuthor && passedAuthor.id) {
         pushEmployee(
             passedAuthor.id,
