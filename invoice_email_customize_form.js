@@ -206,15 +206,58 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
           return true;
         });
       }
-      
+      // --- Pull in all employees flagged as email authors (custentity_bpc_email_author) ---
+try {
+  var emailAuthorSearch = search.create({
+    type: "employee",
+    filters: [
+      ["custentity_bpc_email_author", "is", "F"],
+      "AND",
+      ["isinactive", "is", "F"]
+    ],
+    columns: [
+      search.createColumn({ name: "internalid", label: "Internal ID" }),
+      search.createColumn({ name: "entityid",   label: "Name" }),
+      search.createColumn({ name: "email",       label: "Email" })
+    ]
+  });
+
+  emailAuthorSearch.run().each(function (result) {
+    var empId = result.getValue({ name: "internalid" });
+
+    // Skip the current user — they're added separately as the fallback author
+    if (String(empId) === String(userId)) return true;
+
+    // Skip anyone already in the list (e.g. pulled by the classification author lookup)
+    var alreadyIn = employeeList.some(function (e) {
+      return String(e.id) === String(empId);
+    });
+    if (alreadyIn) return true;
+
+    employeeList.push({
+      id:    empId,
+      name:  result.getValue({ name: "entityid" }),
+      email: result.getValue({ name: "email" })
+    });
+
+    return true;
+  });
+} catch (e) {
+  log.error('Email Author Employee Search Error', e);
+}
       // Always add the current user as a fallback author
-      var obj = {
-        name: userName,
-        email: userEmail,
-        id: userId
-      };
-      if (!defaultID) obj.default = true;
-      employeeList.push(obj);
+var userAlreadyInList = employeeList.some(function (e) {
+  return String(e.id) === String(userId);
+});
+if (!userAlreadyInList) {
+  var obj = {
+    name: userName,
+    email: userEmail,
+    id: userId
+  };
+  if (!defaultID) obj.default = true;
+  employeeList.push(obj);
+}
       
       
       if (employeeList.length == 0) return;
