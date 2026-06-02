@@ -24,7 +24,7 @@ define(['N/search', 'N/log'], (search, log) => {
         if (context.sublistId !== SUBLIST) return;
 
         const rec = context.currentRecord;
-        toggleMachineField(rec);
+     //   toggleMachineField(rec);
     }
 
     function fieldChanged(context) {
