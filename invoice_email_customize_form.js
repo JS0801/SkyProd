@@ -212,7 +212,7 @@ try {
   var emailAuthorSearch = search.create({
     type: "employee",
     filters: [
-      ["custentity_bpc_email_author", "is", "T"],
+      ["custentity_bpc_email_author", "is", "F"],
       "AND",
       ["isinactive", "is", "F"],
             "AND",
