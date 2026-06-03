@@ -213,7 +213,7 @@ define(['N/search', 'N/record', 'N/log'], function (search, record, log) {
         changeMachine: changMachine,
         lineMachine: lineMachine,
         lineItem: lineItem,
-        lineOverMachine: lineOverMachine,
+       // lineOverMachine: lineOverMachine,
         currentLineRR: lineRR,
         master: master,
         key: key,
