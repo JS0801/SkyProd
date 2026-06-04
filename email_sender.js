@@ -121,9 +121,9 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
       let merged;
       try {
         merged = render.mergeEmail({
-          templateId: templateId,
-          transactionId: isInvGrp ? null : recordId,
-          entityId: custId
+          templateId: parseInt(templateId),
+          transactionId: parseInt(recordId),
+          entityId: parseInt(custId)
         });
       } catch (mergeErr) {
         // Fallback: entity-only merge (matches your old beforeLoad logic)
