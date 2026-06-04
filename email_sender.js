@@ -102,6 +102,47 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
     });
   }
 
+
+  function GET(request) {
+  try {
+    if (request.action === 'merge') {
+      const templateId = Number(request.templateId);
+      if (!templateId) throw new Error('templateId is required.');
+
+      const isInvGrp = String(request.recordType || '') === 'invoicegroup';
+      const recordId = Number(request.recordId) || null;
+      const custId   = Number(request.custId)   || null;
+
+      let merged;
+      try {
+        merged = render.mergeEmail({
+          templateId: templateId,
+          transactionId: isInvGrp ? null : recordId,
+          entityId: custId
+        });
+      } catch (mergeErr) {
+        // Fallback: entity-only merge (matches your old beforeLoad logic)
+        log.debug('Merge fallback for template ' + templateId, mergeErr.message);
+        merged = render.mergeEmail({
+          templateId: templateId,
+          entityId: custId
+        });
+      }
+
+      return {
+        success: true,
+        subject: merged.subject || '',
+        body: merged.body || ''
+      };
+    }
+
+    return { success: false, message: 'Unknown action.' };
+  } catch (e) {
+    log.error('RESTlet Merge Error', { message: e.message, stack: e.stack });
+    return { success: false, message: e.message || String(e) };
+  }
+}
+
   function POST(request) {
     try {
       const author            = Number(request.author) || runtime.getCurrentUser().id;
@@ -163,5 +204,5 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
     }
   }
 
-  return { post: POST };
+  return { get: GET, post: POST };
 });
