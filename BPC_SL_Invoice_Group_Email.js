@@ -16,9 +16,13 @@ define([
   function onRequest(context) {
     try {
       if (context.request.method === 'GET') {
-        handleGet(context);
+    if (context.request.parameters.action === 'merge') {
+        handleMerge(context);
         return;
-      }
+    }
+    handleGet(context);
+    return;
+}
 
       if (context.request.method === 'POST') {
         handlePost(context);
@@ -31,6 +35,36 @@ define([
       context.response.write('<html><body><h3>Error</h3><pre>' + escapeHtml(String(e && e.message || e)) + '</pre></body></html>');
     }
   }
+
+  function handleMerge(context) {
+    var req = context.request;
+    var templateId = req.parameters.templateid || '';
+    var custId     = req.parameters.custid || '';
+    var recId      = req.parameters.recid || '';
+    var recType    = req.parameters.rectype || '';
+    var result = { subject: '', body: '' };
+
+    try {
+        var isTxn = recType && recType !== 'invoicegroup';
+        var merged;
+        try {
+            merged = render.mergeEmail({
+                templateId: Number(templateId),
+                transactionId: isTxn ? (Number(recId) || null) : null,
+                entityId: custId ? Number(custId) : null
+            });
+        } catch (e) {
+            merged = render.mergeEmail({ templateId: Number(templateId) }); // your old fallback
+        }
+        result.subject = merged && merged.subject ? String(merged.subject) : '';
+        result.body    = merged && merged.body    ? String(merged.body)    : '';
+    } catch (e) {
+        log.error('handleMerge error', e);
+    }
+
+    context.response.setHeader({ name: 'Content-Type', value: 'application/json' });
+    context.response.write(JSON.stringify(result));
+}
 
   function handleGet(context) {
     var req = context.request;
@@ -66,7 +100,7 @@ var data = getPopupData(recId, authorObj, customerId, classId, recType);
     addHiddenLongText(form, 'custpage_email_customers', 'Email Customers Data', JSON.stringify(data.customerList || []));
     addHiddenLongText(form, 'custpage_email_templates', 'Email Templates Data', JSON.stringify(data.emailTemplateList || []));
     addHiddenLongText(form, 'custpage_email_employees', 'Email Employees Data', JSON.stringify(data.employeeList || []));
-    addHiddenLongText(form, 'custpage_email_premerged', 'Email Premerged Data', JSON.stringify(data.preMergedById || {}));
+   // addHiddenLongText(form, 'custpage_email_premerged', 'Email Premerged Data', JSON.stringify(data.preMergedById || {}));
     addHiddenLongText(form, 'custpage_email_payload', 'Email Payload', '');
     addHiddenText(form, 'custpage_email_custid', 'Customer ID', String(customerId || ''));
     addHiddenText(form, 'custpage_email_recordid', 'Email Record ID', String(recId || ''));
@@ -220,7 +254,7 @@ var recId      = req.parameters.custpage_email_recordid || payload.recordId || '
     out.customerList     = getCustomerRecipients(customerId, recId, recType);
     out.employeeList     = getEmployeeList(passedAuthor, classId);   // unchanged
     out.emailTemplateList= getEmailTemplates();                       // unchanged
-    out.preMergedById    = getPreMergedTemplates(out.emailTemplateList, customerId, recId, recType);
+   // out.preMergedById    = getPreMergedTemplates(out.emailTemplateList, customerId, recId, recType);
     return out;
 }
 
