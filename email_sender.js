@@ -134,6 +134,8 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
           entityId: custId
         });
       }
+      log.debug('subject', merged.subject)
+      log.debug('body', merged.body)
 
       return {
         success: true,
