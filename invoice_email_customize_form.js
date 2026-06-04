@@ -766,23 +766,50 @@ if (!userAlreadyInList) {
           
 templateSelect.addEventListener('change', function () {
   const templateId = this.value;
+  console.log('[merge] templateId selected:', templateId);
   if (!templateId) return;
-  w.nsShowLoader('Loading template…');
-  fetch('/app/site/hosting/restlet.nl?script=3030&deploy=1'
+
+  const mergeUrl = '/app/site/hosting/restlet.nl?script=3030&deploy=1'
         + '&action=merge'
         + '&templateId=' + encodeURIComponent(templateId)
         + '&recordId='   + encodeURIComponent(w.nsRecordId)
-        + '&recordType='  + encodeURIComponent(w.nsRecordType)
-        + '&custId='     + encodeURIComponent(w.nsCustId), {
+        + '&recordType=' + encodeURIComponent(w.nsRecordType)
+        + '&custId='     + encodeURIComponent(w.nsCustId);
+  console.log('[merge] nsRecordId:', w.nsRecordId, 'nsRecordType:', w.nsRecordType, 'nsCustId:', w.nsCustId);
+  console.log('[merge] request URL:', mergeUrl);
+
+  w.nsShowLoader('Loading template…');
+
+  fetch(mergeUrl, {
     method: 'GET',
     credentials: 'same-origin'
   })
-  .then(r => r.json())
-  .then(data => {
-    document.getElementById('nsSubject').value = data.subject || '';
-    document.getElementById('nsBody').innerHTML  = data.body    || '';
+  .then(r => {
+    console.log('[merge] HTTP status:', r.status, 'ok:', r.ok);
+    console.log('[merge] content-type:', r.headers.get('content-type'));
+    return r.text();   // read as text first so we can see raw body even if not JSON
   })
-  .catch(err => { console.error(err); alert('Could not load template.'); })
+  .then(raw => {
+    console.log('[merge] raw response:', raw);
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      console.error('[merge] JSON parse failed — response was not JSON:', e);
+      alert('Server did not return JSON. Check console.');
+      return;
+    }
+    console.log('[merge] parsed data:', data);
+    console.log('[merge] subject:', data.subject);
+    console.log('[merge] body length:', (data.body || '').length);
+
+    document.getElementById('nsSubject').value = data.subject || '';
+    document.getElementById('nsBody').innerHTML = data.body || '';
+  })
+  .catch(err => {
+    console.error('[merge] fetch error:', err);
+    alert('Could not load template.');
+  })
   .finally(() => w.nsHideLoader());
 });
         }
