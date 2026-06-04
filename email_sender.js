@@ -137,11 +137,14 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
       log.debug('subject', merged.subject)
       log.debug('body', merged.body)
 
-return {
+var result = {
   success: true,
   subject: String(merged.subject || ''),
   body: String(merged.body || '')
 };
+context.response.setHeader({ name: 'Content-Type', value: 'application/json' });
+context.response.write(JSON.stringify(result));
+return;
     }
 
     return { success: false, message: 'Unknown action.' };
