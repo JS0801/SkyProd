@@ -118,8 +118,6 @@ var data = getPopupData(recId, authorObj, customerId, classId, recType);
 
   function handlePost(context) {
     var req = context.request;
-    var recordType = req.parameters.custpage_email_recordtype || '';
-var recId      = req.parameters.custpage_email_recordid || payload.recordId || '';
     var payloadText = req.parameters.custpage_email_payload || '';
     log.debug('Post Param', req.parameters)
 
@@ -135,6 +133,9 @@ var recId      = req.parameters.custpage_email_recordid || payload.recordId || '
       writeScriptResponse(context, false, 'Invalid payload JSON.');
       return;
     }
+
+    var recordType = payload.recordType || req.parameters.rectype || '';
+var recId      = payload.recordId   || req.parameters.recid   || '';
 
     var custID = req.parameters.custid || '';
     var toList = [];
