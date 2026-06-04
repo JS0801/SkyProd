@@ -676,6 +676,7 @@ if (!userAlreadyInList) {
         // Store the record ID and type for the RESTlet
         w.nsRecordId = ` + recordId + `;
         w.nsRecordType = ${recTypeStr};
+        w.nsCustId = ` + (custID || 0) + `;
         w.nsAccountUrl = window.location.protocol + '//' + window.location.hostname;
         
         const customers = JSON.parse(\`${customerDataJson}\`);
