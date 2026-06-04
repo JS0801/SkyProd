@@ -113,6 +113,10 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
       const recordId = Number(request.recordId) || null;
       const custId   = Number(request.custId)   || null;
 
+
+      log.debug('custId', custId)
+      log.debug('recordId', recordId)
+
       let merged;
       try {
         merged = render.mergeEmail({
