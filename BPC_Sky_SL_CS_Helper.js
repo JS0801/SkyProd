@@ -19,7 +19,6 @@ define([], function () {
       var rec = context.currentRecord;
 
       STATE.customers = parseJson(rec.getValue('custpage_email_customers'), []);
-      STATE.templates = parseJson(rec.getValue('custpage_email_templates'), []);
       STATE.employees = parseJson(rec.getValue('custpage_email_employees'), []);
       STATE.preMerged = parseJson(rec.getValue('custpage_email_premerged'), {});
       STATE.recordId = String(rec.getValue('custpage_email_recordid') || '');
@@ -191,14 +190,44 @@ define([], function () {
     addRecipientRow(first.email, 'TO');
   }
 
-  function applyTemplate(templateId) {
-    var entry = STATE.preMerged[String(templateId)] || { subject: '', body: '' };
+function applyTemplate(templateId) {
     var subjectEl = document.getElementById('nsSubject');
     var bodyEl = document.getElementById('nsBody');
 
-    if (subjectEl) subjectEl.value = entry.subject || '';
-    if (bodyEl) bodyEl.innerHTML = entry.body || '';
-  }
+    if (!templateId) {
+        if (subjectEl) subjectEl.value = '';
+        if (bodyEl) bodyEl.innerHTML = '';
+        return;
+    }
+
+    // Serve from cache if this template was already merged this session
+    var cached = STATE.preMerged[String(templateId)];
+    if (cached) {
+        if (subjectEl) subjectEl.value = cached.subject || '';
+        if (bodyEl) bodyEl.innerHTML = cached.body || '';
+        return;
+    }
+
+    var url = window.location.pathname + window.location.search +
+              '&action=merge&templateid=' + encodeURIComponent(templateId);
+
+    showLoader('Loading template...');
+    fetch(url, { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (entry) {
+            entry = entry || { subject: '', body: '' };
+            STATE.preMerged[String(templateId)] = entry; // cache for re-selection
+            if (subjectEl) subjectEl.value = entry.subject || '';
+            if (bodyEl) bodyEl.innerHTML = entry.body || '';
+        })
+        .catch(function (err) {
+            console.error('template merge fetch error', err);
+            alert('Could not load template.');
+        })
+        .finally(function () {
+            hideLoader();
+        });
+}
 
   function switchTab(tabName) {
     var tabs = document.querySelectorAll('.ns-tab');
