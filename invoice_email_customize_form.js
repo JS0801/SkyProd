@@ -262,45 +262,45 @@ if (!userAlreadyInList) {
       }
       
       // --- Pre-merge all templates server-side (once) ---
-      const preMergedById = {};
-      try {
-        const txnId = context.newRecord.id;
-        const entityId = custID;
+      // const preMergedById = {};
+      // try {
+      //   const txnId = context.newRecord.id;
+      //   const entityId = custID;
         
-        emailTemplateList.forEach(t => {
-          try {
-            // For Invoice Group, we may not be able to pass transactionId
-            // since render.mergeEmail may not support invoicegroup type.
-            // We still attempt it; if it fails, we fall back to entity-only merge.
-            let merged;
-            try {
-              merged = render.mergeEmail({
-                templateId: Number(t.id),
-                transactionId: isInvoiceGroup ? null : (Number(txnId) || null),
-                entityId: Number(entityId) || null
-              });
-            } catch (mergeErr) {
-              // Fallback: merge with entity only (no transaction context)
-              log.debug('Merge fallback for template ' + t.id, mergeErr.message);
-              merged = render.mergeEmail({
-                templateId: Number(t.id),
-                entityId: Number(entityId) || null
-              });
-            }
-            preMergedById[String(t.id)] = {
-              subject: merged.subject || '',
-              body: merged.body || ''
-            };
-          } catch (e) {
-            log.error('Template merge error for ' + t.id, e);
-            preMergedById[String(t.id)] = { subject: '', body: '' };
-          }
-        });
-      } catch (e) {
-        log.error('Pre-merge block failed', e);
-      }
+      //   emailTemplateList.forEach(t => {
+      //     try {
+      //       // For Invoice Group, we may not be able to pass transactionId
+      //       // since render.mergeEmail may not support invoicegroup type.
+      //       // We still attempt it; if it fails, we fall back to entity-only merge.
+      //       let merged;
+      //       try {
+      //         merged = render.mergeEmail({
+      //           templateId: Number(t.id),
+      //           transactionId: isInvoiceGroup ? null : (Number(txnId) || null),
+      //           entityId: Number(entityId) || null
+      //         });
+      //       } catch (mergeErr) {
+      //         // Fallback: merge with entity only (no transaction context)
+      //         log.debug('Merge fallback for template ' + t.id, mergeErr.message);
+      //         merged = render.mergeEmail({
+      //           templateId: Number(t.id),
+      //           entityId: Number(entityId) || null
+      //         });
+      //       }
+      //       preMergedById[String(t.id)] = {
+      //         subject: merged.subject || '',
+      //         body: merged.body || ''
+      //       };
+      //     } catch (e) {
+      //       log.error('Template merge error for ' + t.id, e);
+      //       preMergedById[String(t.id)] = { subject: '', body: '' };
+      //     }
+      //   });
+      // } catch (e) {
+      //   log.error('Pre-merge block failed', e);
+      // }
       
-      const preMergedJson = JSON.stringify(preMergedById);
+      // const preMergedJson = JSON.stringify(preMergedById);
       
       const customerDataJson = JSON.stringify(customerList);
       const emailTemplateDataJson = JSON.stringify(emailTemplateList);
@@ -681,8 +681,6 @@ if (!userAlreadyInList) {
         const customers = JSON.parse(\`${customerDataJson}\`);
         const emailTemplates = JSON.parse(\`${emailTemplateDataJson}\`);
         const employees = JSON.parse(\`${employeeDataJson}\`);
-        const preMerged = ${preMergedJson}
-        w.__PREMERGED_EMAIL__ = preMerged;
         
         // Populate the dropdown with customer data
         const addRecSelect = document.getElementById('nsRecipientSel');
