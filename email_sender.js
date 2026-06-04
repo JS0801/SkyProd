@@ -137,11 +137,11 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
       log.debug('subject', merged.subject)
       log.debug('body', merged.body)
 
-      return {
-        success: true,
-        subject: merged.subject || '',
-        body: merged.body || ''
-      };
+return {
+  success: true,
+  subject: String(merged.subject || ''),
+  body: String(merged.body || '')
+};
     }
 
     return { success: false, message: 'Unknown action.' };
