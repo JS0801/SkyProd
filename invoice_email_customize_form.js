@@ -97,36 +97,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
         }
       }
 
-      // Contact search — for Invoice Group, search contacts linked to the customer entity
-      if (isInvoiceGroup && custID) {
-        var contactSearchObj = search.create({
-          type: "contact",
-          filters: [
-            ["company", "anyof", custID],
-            "AND",
-            ["email", "isnotempty", ""]
-          ],
-          columns: [
-            search.createColumn({name: "internalid", label: "Internal ID"}),
-            search.createColumn({name: "entityid", label: "Name"}),
-            search.createColumn({name: "email", label: "Email"})
-          ]
-        });
-        contactSearchObj.run().each(function(result) {
-          log.debug('result', result);
-          var contactID = result.getValue({name: "internalid"});
-          var contactName = result.getValue({name: "entityid"});
-          var contactEmail = result.getValue({name: "email"});
-
-          customerList.push({
-            id: contactID,
-            name: contactName + " (" + contactEmail + ")",
-            email: contactEmail
-          });
-
-          return true;
-        });
-      } else {
         // Original contact search for standard transactions (linked via transaction)
         var contactSearchObj = search.create({
           type: "contact",
@@ -155,7 +125,6 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
 
           return true;
         });
-      }
       
       var employeeList = [];
       var defaultID = null;
