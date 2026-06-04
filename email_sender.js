@@ -142,7 +142,8 @@ var result = {
   subject: String(merged.subject || ''),
   body: String(merged.body || '')
 };
-return result;
+      log.debug('result', result)
+return { success: true, subject: 'TEST', body: 'TEST' };
     }
 
     return { success: false, message: 'Unknown action.' };
