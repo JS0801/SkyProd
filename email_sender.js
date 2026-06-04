@@ -125,6 +125,7 @@ define(['N/email','N/file','N/render','N/log','N/record','N/runtime', 'N/search'
           transactionId: parseInt(recordId),
           entityId: parseInt(custId)
         });
+        log.debug('merged', merged)
       } catch (mergeErr) {
         // Fallback: entity-only merge (matches your old beforeLoad logic)
         log.debug('Merge fallback for template ' + templateId, mergeErr.message);
