@@ -765,21 +765,27 @@ if (!userAlreadyInList) {
             templateSelect.appendChild(option);
           });
           
-          templateSelect.addEventListener('change', function () {
-            const templateId = this.value;
-            if (!templateId) return;
-            
-            console.log("Selected Template ID:", templateId);
-            
-            const store = (window.__PREMERGED_EMAIL__ || {});
-            const entry = store[String(templateId)] || { subject: '', body: '' };
-            
-            console.log('body', entry.body)
-            console.log('subject', entry.subject)
-            
-            document.getElementById('nsSubject').value = entry.subject || '';
-            document.getElementById('nsBody').innerHTML = entry.body || '';
-          });
+templateSelect.addEventListener('change', function () {
+  const templateId = this.value;
+  if (!templateId) return;
+  w.nsShowLoader('Loading template…');
+  fetch('/app/site/hosting/restlet.nl?script=3030&deploy=1'
+        + '&action=merge'
+        + '&templateId=' + encodeURIComponent(templateId)
+        + '&recordId='   + encodeURIComponent(w.nsRecordId)
+        + '&recordType='  + encodeURIComponent(w.nsRecordType)
+        + '&custId='     + encodeURIComponent(w.nsCustId), {
+    method: 'GET',
+    credentials: 'same-origin'
+  })
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('nsSubject').value = data.subject || '';
+    document.getElementById('nsBody').innerHTML  = data.body    || '';
+  })
+  .catch(err => { console.error(err); alert('Could not load template.'); })
+  .finally(() => w.nsHideLoader());
+});
         }
         
         // Public function to open the modal
