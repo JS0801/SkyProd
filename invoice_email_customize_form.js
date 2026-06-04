@@ -262,45 +262,45 @@ if (!userAlreadyInList) {
       }
       
       // --- Pre-merge all templates server-side (once) ---
-      // const preMergedById = {};
-      // try {
-      //   const txnId = context.newRecord.id;
-      //   const entityId = custID;
+      const preMergedById = {};
+      try {
+        const txnId = context.newRecord.id;
+        const entityId = custID;
         
-      //   emailTemplateList.forEach(t => {
-      //     try {
-      //       // For Invoice Group, we may not be able to pass transactionId
-      //       // since render.mergeEmail may not support invoicegroup type.
-      //       // We still attempt it; if it fails, we fall back to entity-only merge.
-      //       let merged;
-      //       try {
-      //         merged = render.mergeEmail({
-      //           templateId: Number(t.id),
-      //           transactionId: isInvoiceGroup ? null : (Number(txnId) || null),
-      //           entityId: Number(entityId) || null
-      //         });
-      //       } catch (mergeErr) {
-      //         // Fallback: merge with entity only (no transaction context)
-      //         log.debug('Merge fallback for template ' + t.id, mergeErr.message);
-      //         merged = render.mergeEmail({
-      //           templateId: Number(t.id),
-      //           entityId: Number(entityId) || null
-      //         });
-      //       }
-      //       preMergedById[String(t.id)] = {
-      //         subject: merged.subject || '',
-      //         body: merged.body || ''
-      //       };
-      //     } catch (e) {
-      //       log.error('Template merge error for ' + t.id, e);
-      //       preMergedById[String(t.id)] = { subject: '', body: '' };
-      //     }
-      //   });
-      // } catch (e) {
-      //   log.error('Pre-merge block failed', e);
-      // }
+        emailTemplateList.forEach(t => {
+          try {
+            // For Invoice Group, we may not be able to pass transactionId
+            // since render.mergeEmail may not support invoicegroup type.
+            // We still attempt it; if it fails, we fall back to entity-only merge.
+            let merged;
+            try {
+              merged = render.mergeEmail({
+                templateId: Number(t.id),
+                transactionId: isInvoiceGroup ? null : (Number(txnId) || null),
+                entityId: Number(entityId) || null
+              });
+            } catch (mergeErr) {
+              // Fallback: merge with entity only (no transaction context)
+              log.debug('Merge fallback for template ' + t.id, mergeErr.message);
+              merged = render.mergeEmail({
+                templateId: Number(t.id),
+                entityId: Number(entityId) || null
+              });
+            }
+            preMergedById[String(t.id)] = {
+              subject: merged.subject || '',
+              body: merged.body || ''
+            };
+          } catch (e) {
+            log.error('Template merge error for ' + t.id, e);
+            preMergedById[String(t.id)] = { subject: '', body: '' };
+          }
+        });
+      } catch (e) {
+        log.error('Pre-merge block failed', e);
+      }
       
-      // const preMergedJson = JSON.stringify(preMergedById);
+      const preMergedJson = JSON.stringify(preMergedById);
       
       const customerDataJson = JSON.stringify(customerList);
       const emailTemplateDataJson = JSON.stringify(emailTemplateList);
@@ -676,12 +676,13 @@ if (!userAlreadyInList) {
         // Store the record ID and type for the RESTlet
         w.nsRecordId = ` + recordId + `;
         w.nsRecordType = ${recTypeStr};
-        w.nsCustId = ` + (custID || 0) + `;
         w.nsAccountUrl = window.location.protocol + '//' + window.location.hostname;
         
         const customers = JSON.parse(\`${customerDataJson}\`);
         const emailTemplates = JSON.parse(\`${emailTemplateDataJson}\`);
         const employees = JSON.parse(\`${employeeDataJson}\`);
+        const preMerged = ${preMergedJson}
+        w.__PREMERGED_EMAIL__ = preMerged;
         
         // Populate the dropdown with customer data
         const addRecSelect = document.getElementById('nsRecipientSel');
@@ -764,54 +765,21 @@ if (!userAlreadyInList) {
             templateSelect.appendChild(option);
           });
           
-templateSelect.addEventListener('change', function () {
-  const templateId = this.value;
-  console.log('[merge] templateId selected:', templateId);
-  if (!templateId) return;
-
-  const mergeUrl = '/app/site/hosting/restlet.nl?script=3030&deploy=1'
-        + '&action=merge'
-        + '&templateId=' + encodeURIComponent(templateId)
-        + '&recordId='   + encodeURIComponent(w.nsRecordId)
-        + '&recordType=' + encodeURIComponent(w.nsRecordType)
-        + '&custId='     + encodeURIComponent(w.nsCustId);
-  console.log('[merge] nsRecordId:', w.nsRecordId, 'nsRecordType:', w.nsRecordType, 'nsCustId:', w.nsCustId);
-  console.log('[merge] request URL:', mergeUrl);
-
-  w.nsShowLoader('Loading template…');
-
-  fetch(mergeUrl, {
-    method: 'GET',
-    credentials: 'same-origin'
-  })
-  .then(r => {
-    console.log('[merge] HTTP status:', r.status, 'ok:', r.ok);
-    console.log('[merge] content-type:', r.headers.get('content-type'));
-    return r.text();   // read as text first so we can see raw body even if not JSON
-  })
-  .then(raw => {
-    console.log('[merge] raw response:', raw);
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch (e) {
-      console.error('[merge] JSON parse failed — response was not JSON:', e);
-      alert('Server did not return JSON. Check console.');
-      return;
-    }
-    console.log('[merge] parsed data:', data);
-    console.log('[merge] subject:', data.subject);
-    console.log('[merge] body length:', (data.body || '').length);
-
-    document.getElementById('nsSubject').value = data.subject || '';
-    document.getElementById('nsBody').innerHTML = data.body || '';
-  })
-  .catch(err => {
-    console.error('[merge] fetch error:', err);
-    alert('Could not load template.');
-  })
-  .finally(() => w.nsHideLoader());
-});
+          templateSelect.addEventListener('change', function () {
+            const templateId = this.value;
+            if (!templateId) return;
+            
+            console.log("Selected Template ID:", templateId);
+            
+            const store = (window.__PREMERGED_EMAIL__ || {});
+            const entry = store[String(templateId)] || { subject: '', body: '' };
+            
+            console.log('body', entry.body)
+            console.log('subject', entry.subject)
+            
+            document.getElementById('nsSubject').value = entry.subject || '';
+            document.getElementById('nsBody').innerHTML = entry.body || '';
+          });
         }
         
         // Public function to open the modal
