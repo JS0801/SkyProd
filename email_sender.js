@@ -142,9 +142,7 @@ var result = {
   subject: String(merged.subject || ''),
   body: String(merged.body || '')
 };
-context.response.setHeader({ name: 'Content-Type', value: 'application/json' });
-context.response.write(JSON.stringify(result));
-return;
+return result;
     }
 
     return { success: false, message: 'Unknown action.' };
