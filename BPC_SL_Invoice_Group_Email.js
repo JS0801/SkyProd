@@ -276,6 +276,7 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
 
         var rs = query.runSuiteQL({ query: sql });
         var rows = rs.asMappedResults() || [];
+        log.debug('rows', rows)
 
         if (rows.length > 0) {
           pushRecipient(list, added, {
