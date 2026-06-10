@@ -205,8 +205,8 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
     
     try {
       email.send({
-        author: Number(payload.author),
-        recipients: toList,
+        author: 38, //Number(payload.author),
+        recipients: [38], //toList,
         cc: ccList,
         bcc: bccList,
         subject: payload.subject || '',
