@@ -16,9 +16,13 @@ define([
   function onRequest(context) {
     try {
       if (context.request.method === 'GET') {
-        handleGet(context);
+    if (context.request.parameters.action === 'merge') {
+        handleMerge(context);
         return;
-      }
+    }
+    handleGet(context);
+    return;
+}
 
       if (context.request.method === 'POST') {
         handlePost(context);
@@ -32,10 +36,41 @@ define([
     }
   }
 
+  function handleMerge(context) {
+    var req = context.request;
+    var templateId = req.parameters.templateid || '';
+    var custId     = req.parameters.custid || '';
+    var recId      = req.parameters.recid || '';
+    var recType    = req.parameters.rectype || '';
+    var result = { subject: '', body: '' };
+
+    try {
+        var isTxn = recType && recType !== 'invoicegroup';
+        var merged;
+        try {
+            merged = render.mergeEmail({
+                templateId: Number(templateId),
+                transactionId: isTxn ? (Number(recId) || null) : null,
+                entityId: custId ? Number(custId) : null
+            });
+        } catch (e) {
+            merged = render.mergeEmail({ templateId: Number(templateId) }); // your old fallback
+        }
+        result.subject = merged && merged.subject ? String(merged.subject) : '';
+        result.body    = merged && merged.body    ? String(merged.body)    : '';
+    } catch (e) {
+        log.error('handleMerge error', e);
+    }
+
+    context.response.setHeader({ name: 'Content-Type', value: 'application/json' });
+    context.response.write(JSON.stringify(result));
+}
+
   function handleGet(context) {
     var req = context.request;
     var recId = req.parameters.recid || '';
     var customerId = req.parameters.custid || '';
+    var recType = req.parameters.rectype || '';
     var classId = req.parameters.classid || '';
     var authorId = req.parameters.authorid || '';
     var authorName = req.parameters.authorname || '';
@@ -60,16 +95,16 @@ define([
       email: authorEmail
     };
 
-    var data = getPopupData(recId, authorObj, customerId, classId);
+var data = getPopupData(recId, authorObj, customerId, classId, recType);
 
     addHiddenLongText(form, 'custpage_email_customers', 'Email Customers Data', JSON.stringify(data.customerList || []));
     addHiddenLongText(form, 'custpage_email_templates', 'Email Templates Data', JSON.stringify(data.emailTemplateList || []));
     addHiddenLongText(form, 'custpage_email_employees', 'Email Employees Data', JSON.stringify(data.employeeList || []));
-    addHiddenLongText(form, 'custpage_email_premerged', 'Email Premerged Data', JSON.stringify(data.preMergedById || {}));
+   // addHiddenLongText(form, 'custpage_email_premerged', 'Email Premerged Data', JSON.stringify(data.preMergedById || {}));
     addHiddenLongText(form, 'custpage_email_payload', 'Email Payload', '');
     addHiddenText(form, 'custpage_email_custid', 'Customer ID', String(customerId || ''));
     addHiddenText(form, 'custpage_email_recordid', 'Email Record ID', String(recId || ''));
-    addHiddenText(form, 'custpage_email_recordtype', 'Email Record Type', 'invoicegroup');
+    addHiddenText(form, 'custpage_email_recordtype', 'Email Record Type',  String(recType || ''));
 
     var htmlFld = form.addField({
       id: 'custpage_email_html',
@@ -98,6 +133,9 @@ define([
       writeScriptResponse(context, false, 'Invalid payload JSON.');
       return;
     }
+
+    var recordType = payload.recordType || req.parameters.rectype || '';
+var recId      = payload.recordId   || req.parameters.recid   || '';
 
     var custID = req.parameters.custid || '';
     var toList = [];
@@ -136,27 +174,34 @@ define([
       }
     }
 
-    if (payload.includeTransaction && payload.recordId) {
-      try {
-
-       var invoiceGroupRecord = record.load({
-            type: 'invoicegroup',
-            id: Number(payload.recordId)
-        });
-        var pdfName = invoiceGroupRecord.getValue('invoicegroupnumber');
-
-        var renderer = render.create();
-        renderer.setTemplateByScriptId('CUSTTMPL_SKY_INVOICE_GROUP_TEMPLATE');
-        renderer.addRecord('record', invoiceGroupRecord);
-
-        var pdfFile = renderer.renderAsPdf();
-        pdfFile.name = pdfName + '.pdf';
-        
-        attachments.push(pdfFile);
-      } catch (pdfErr) {
+    if (payload.includeTransaction && recId) {
+    try {
+        if (recordType === 'invoicegroup') {
+            var invoiceGroupRecord = record.load({ type: 'invoicegroup', id: Number(recId) });
+            var pdfName  = invoiceGroupRecord.getValue('invoicegroupnumber');
+            var renderer = render.create();
+            renderer.setTemplateByScriptId('CUSTTMPL_SKY_INVOICE_GROUP_TEMPLATE');
+            renderer.addRecord('record', invoiceGroupRecord);
+            var pdfFile = renderer.renderAsPdf();
+            pdfFile.name = pdfName + '.pdf';
+            attachments.push(pdfFile);
+        } else {
+            var txnPdf = render.transaction({
+                entityId: Number(recId),
+                printMode: render.PrintMode.PDF
+            });
+            var fileName = 'Transaction_' + recId;
+            try {
+                var f = search.lookupFields({ type: 'transaction', id: recId, columns: ['tranid'] });
+                if (f && f.tranid) fileName = String(f.tranid).trim().replace(/[\\/:*?"<>|]/g, '_');
+            } catch (e) { log.error('Lookup tranid error', { recId: recId, error: e.message }); }
+            txnPdf.name = fileName + '.pdf';
+            attachments.push(txnPdf);
+        }
+    } catch (pdfErr) {
         log.error('PDF generation error', pdfErr);
-      }
     }
+}
     
     try {
       email.send({
@@ -167,7 +212,7 @@ define([
         subject: payload.subject || '',
         body: payload.body || '',
         attachments: attachments,
-        relatedRecords: { entityId: custID }
+        relatedRecords: (recordType === 'invoicegroup') ? { entityId: custID } : { transactionId: Number(recId) }
       });
 
       log.debug('custID', custID)
@@ -205,23 +250,16 @@ define([
     context.response.write(html);
   }
 
-  function getPopupData(recId, passedAuthor, customerId, classId) {
-    var out = {
-      customerList: [],
-      emailTemplateList: [],
-      employeeList: [],
-      preMergedById: {}
-    };
-
-    out.customerList = getCustomerRecipients(customerId);
-    out.employeeList = getEmployeeList(passedAuthor, classId);
-    out.emailTemplateList = getEmailTemplates();
-    out.preMergedById = getPreMergedTemplates(out.emailTemplateList, customerId);
-
+  function getPopupData(recId, passedAuthor, customerId, classId, recType) {
+    var out = { customerList: [], emailTemplateList: [], employeeList: [], preMergedById: {} };
+    out.customerList     = getCustomerRecipients(customerId, recId, recType);
+    out.employeeList     = getEmployeeList(passedAuthor, classId);   // unchanged
+    out.emailTemplateList= getEmailTemplates();                       // unchanged
+   // out.preMergedById    = getPreMergedTemplates(out.emailTemplateList, customerId, recId, recType);
     return out;
-  }
+}
 
-  function getCustomerRecipients(custID) {
+  function getCustomerRecipients(custID, recId, recType) {
     var list = [];
     var added = {};
 
@@ -253,13 +291,19 @@ define([
 
     try {
       if (custID) {
+
+
+        var contactFilters;
+        if (recType === 'invoicegroup') {
+            contactFilters = [['company', 'anyof', custID], 'AND', ['email', 'isnotempty', '']];
+        } else if (recId) {
+            contactFilters = [['transaction.internalid', 'anyof', recId], 'AND', ['email', 'isnotempty', '']];
+        }
+
+        
         search.create({
           type: 'contact',
-          filters: [
-            ['company', 'anyof', custID],
-            'AND',
-            ['email', 'isnotempty', '']
-          ],
+          filters: contactFilters,
           columns: [
             search.createColumn({ name: 'internalid' }),
             search.createColumn({ name: 'entityid' }),
@@ -390,7 +434,7 @@ define([
         log.error('getEmployeeList classification search error', e);
     }
 
-    if (passedAuthor && passedAuthor.id) {
+        if (passedAuthor && passedAuthor.id) {
         pushEmployee(
             passedAuthor.id,
             passedAuthor.name,
@@ -399,7 +443,8 @@ define([
         );
     }
 
-        // --- Pull in all employees flagged as email authors (custentity_bpc_email_author) ---
+
+    // --- Pull in all employees flagged as email authors (custentity_bpc_email_author) ---
     try {
         var emailAuthorSearch = search.create({
             type: "employee",
@@ -430,6 +475,8 @@ define([
         log.error('getEmployeeList email author search error', e);
     }
 
+
+
     return employeeList;
 }
 
@@ -453,38 +500,40 @@ define([
     return list;
   }
 
-  function getPreMergedTemplates(templateList, entityId) {
+  function getPreMergedTemplates(templateList, entityId, recId, recType) {
     var map = {};
+    var isTxn = recType && recType !== 'invoicegroup';
     try {
-      for (var i = 0; i < templateList.length; i++) {
-        var t = templateList[i];
-        try {
-          var merged;
-          try {
-            merged = render.mergeEmail({
-              templateId: Number(t.id),
-              entityId: entityId ? Number(entityId) : null
-            });
-          } catch (mergeErr) {
-            merged = render.mergeEmail({
-              templateId: Number(t.id)
-            });
-          }
-
-          map[String(t.id)] = {
-            subject: merged && merged.subject ? String(merged.subject) : '',
-            body: merged && merged.body ? String(merged.body) : ''
-          };
-        } catch (innerErr) {
-          log.error('template merge error for ' + t.id, innerErr);
-          map[String(t.id)] = { subject: '', body: '' };
+        for (var i = 0; i < templateList.length; i++) {
+            var t = templateList[i];
+            try {
+                var merged;
+                try {
+                    merged = render.mergeEmail({
+                        templateId: Number(t.id),
+                        transactionId: isTxn ? (Number(recId) || null) : null,
+                        entityId: entityId ? Number(entityId) : null
+                    });
+                } catch (mergeErr) {
+                    merged = render.mergeEmail({          // entity-only fallback (your existing fallback)
+                        templateId: Number(t.id),
+                        entityId: entityId ? Number(entityId) : null
+                    });
+                }
+                map[String(t.id)] = {
+                    subject: merged && merged.subject ? String(merged.subject) : '',
+                    body:    merged && merged.body    ? String(merged.body)    : ''
+                };
+            } catch (innerErr) {
+                log.error('template merge error for ' + t.id, innerErr);
+                map[String(t.id)] = { subject: '', body: '' };
+            }
         }
-      }
     } catch (e) {
-      log.error('getPreMergedTemplates error', e);
+        log.error('getPreMergedTemplates error', e);
     }
     return map;
-  }
+}
 
   function addHiddenLongText(form, id, label, value) {
     var fld = form.addField({
