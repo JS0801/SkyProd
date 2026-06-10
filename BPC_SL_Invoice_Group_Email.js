@@ -274,6 +274,8 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
           "WHERE entity.email IS NOT NULL " +
           "AND entity.ID = " + Number(custID);
 
+        log.debug('sql', sql)
+
         var rs = query.runSuiteQL({ query: sql });
         var rows = rs.asMappedResults() || [];
         log.debug('rows', rows)
