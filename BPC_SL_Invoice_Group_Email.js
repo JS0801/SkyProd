@@ -21,7 +21,6 @@ define([
         return;
     }
     handleGet(context);
-    return;
 }
 
       if (context.request.method === 'POST') {
@@ -214,6 +213,8 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
         attachments: attachments,
         relatedRecords: (recordType === 'invoicegroup') ? { entityId: custID } : { transactionId: Number(recId) }
       });
+
+      log.debug('related Record', {custID, recId, recordType})
 
       log.debug('custID', custID)
 
