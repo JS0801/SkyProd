@@ -111,7 +111,7 @@ define(['N/search', 'N/record', 'N/log'], function (search, record, log) {
       var results = s.run().getRange({ start: 0, end: 1000 }) || [];
       if (!results.length) {
         log.debug('SKY Job', 'No search results. Nothing to update.');
-        return;
+        
       }
       
       for (var i = 0; i < results.length; i++) {
