@@ -231,20 +231,9 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
       + 'var ok=' + (success ? 'true' : 'false') + ';'
       + 'var msg="' + safeMessage.replace(/"/g, '\\"') + '";'
       + 'if(ok){'
-      + '  alert(msg);'
-      + '  if(window.parent && typeof window.parent.closeInvoiceGroupEmailPopup==="function"){'
-      + '    window.parent.closeInvoiceGroupEmailPopup();'
-      + '    try{window.parent.location.reload();}catch(e){}'
-      + '  }'
-      + '}else{'
-      + '  alert("Failed to send email: " + msg);'
-      + '  if(window.parent && window.parent.document){'
-      + '    try{'
-      + '      var loader = window.parent.document.getElementById("nsEmailLoaderOverlay");'
-      + '      if(loader) loader.style.display="none";'
-      + '    }catch(e2){}'
-      + '  }'
-      + '}'
+      + '  try{'
+      + '    window.parent.postMessage({source:"bpc-invoice-group-email",action:"close",refreshParent:true},"*");'
+      + '  }catch(e){}'
       + '</script></body></html>';
 
     context.response.write(html);
