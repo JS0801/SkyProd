@@ -20,6 +20,7 @@ define([], function () {
 
       STATE.customers = parseJson(rec.getValue('custpage_email_customers'), []);
       STATE.employees = parseJson(rec.getValue('custpage_email_employees'), []);
+      STATE.templates = parseJson(rec.getValue('custpage_email_templates'), []); 
       STATE.preMerged = parseJson(rec.getValue('custpage_email_premerged'), {});
       STATE.recordId = String(rec.getValue('custpage_email_recordid') || '');
       STATE.recordType = String(rec.getValue('custpage_email_recordtype') || 'invoicegroup');
