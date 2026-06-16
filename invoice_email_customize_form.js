@@ -34,7 +34,7 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
             var suiteletUrl = url.resolveScript({
                 scriptId: 'customscript_bpc_sl_invoice_group_email',
                 deploymentId: 'customdeploy_bpc_sl_invoice_group_email',
-                returnExternalUrl: true,
+                returnExternalUrl: false,
                 params: {
                     recid: String(recId || ''),
                     rectype: String(recType || ''),
