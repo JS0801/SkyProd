@@ -40,6 +40,36 @@ define(['N/currentRecord'], function (currentRecord) {
         }
 
         window.closeInvoiceGroupEmailPopup = closeInvoiceGroupEmailPopup;
+                if (!window.__bpcInvGrpEmailMessageBound) {
+            window.__bpcInvGrpEmailMessageBound = true;
+            window.addEventListener('message', handleInvoiceGroupEmailMessage, false);
+        }
+    }
+
+      function handleInvoiceGroupEmailMessage(e) {
+        try {
+            var data = e && e.data;
+            if (!data || data.source !== 'bpc-invoice-group-email') {
+                return;
+            }
+
+            var frame = document.getElementById('bpcInvGrpEmailFrame');
+            if (frame && frame.contentWindow && e.source !== frame.contentWindow) {
+                return;
+            }
+
+            if (data.action === 'close') {
+                closeInvoiceGroupEmailPopup();
+
+                if (data.refreshParent) {
+                    window.setTimeout(function () {
+                        window.location.reload();
+                    }, 50);
+                }
+            }
+        } catch (err) {
+            console.error('invoice group email message error', err);
+        }
     }
 
     function openInvoiceGroupEmailPopup() {
