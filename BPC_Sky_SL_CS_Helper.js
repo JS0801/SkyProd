@@ -442,7 +442,10 @@ function applyTemplate(templateId) {
       var bodyHtml = bodyEl ? bodyEl.innerHTML : '';
       var recipients = collectRecipients();
       var attachments = collectAttachments();
-      var includeTransaction = incTxnEl ? !!incTxnEl.checked : false;
+      var includeTransaction =
+    STATE.recordType === 'supportcase'
+        ? false
+        : (incTxnEl ? !!incTxnEl.checked : false);
 
       if (!authorId) {
         alert('Please select an Author.');
