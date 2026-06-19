@@ -497,18 +497,22 @@ form.submit();
   }
 
   function closePopup(refreshParent) {
+    hideLoader();
+
     try {
-      if (window.parent && typeof window.parent.closeInvoiceGroupEmailPopup === 'function') {
-        window.parent.closeInvoiceGroupEmailPopup();
-        if (refreshParent) {
-          try {
-            window.parent.location.reload();
-          } catch (e1) {}
-        }
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          source: 'bpc-invoice-group-email',
+          action: 'close',
+          refreshParent: !!refreshParent
+        }, '*');
+        return;
       }
-    } catch (e) {
-      console.error('closePopup error', e);
-    }
+    } catch (e) {}
+
+    try {
+      window.close();
+    } catch (e2) {}
   }
 
   function showLoader(text) {
