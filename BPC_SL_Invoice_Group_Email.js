@@ -225,15 +225,27 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
   }
 
   function writeScriptResponse(context, success, message) {
-    var safeMessage = escapeHtml(message || '');
+    var jsMessage = JSON.stringify(String(message || ''));
     var html = ''
       + '<html><body><script>'
+      + '(function(){'
       + 'var ok=' + (success ? 'true' : 'false') + ';'
-      + 'var msg="' + safeMessage.replace(/"/g, '\\"') + '";'
-      + 'if(ok){'
+      + 'var msg=' + jsMessage + ';'
+      + 'function closeParent(refreshParent){'
       + '  try{'
-      + '    window.parent.postMessage({source:"bpc-invoice-group-email",action:"close",refreshParent:true},"*");'
+      + '    if(window.parent && window.parent !== window){'
+      + '      window.parent.postMessage({source:"bpc-invoice-group-email",action:"close",refreshParent:!!refreshParent},"*");'
+      + '    }else{'
+      + '      window.close();'
+      + '    }'
       + '  }catch(e){}'
+      + '}'
+      + 'if(ok){'
+      + '  closeParent(true);'
+      + '}else{'
+      + '  alert("Failed to send email: " + msg);'
+      + '}'
+      + '}());'
       + '</script></body></html>';
 
     context.response.write(html);
