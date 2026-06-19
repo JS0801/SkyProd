@@ -9,7 +9,7 @@ define([
   'N/query',
   'N/render',
   'N/email',
-  'N/file',
+  'N/file©
   'N/record'
 ], function (ui, search, runtime, query, render, email, file, record) {
 
@@ -597,7 +597,6 @@ if (recordType === 'invoicegroup') {
 
     function getEmailTemplates(recType) {
     var list = [];
-    var isSupportCase = recType === 'supportcase';
 
     try {
         search.create({
@@ -606,52 +605,13 @@ if (recordType === 'invoicegroup') {
                 ['isinactive', 'is', 'F']
             ],
             columns: [
-                'name',
-                'internalid',
-                'recordtype'
+                search.createColumn({
+                    name: 'name',
+                    sort: search.Sort.ASC
+                }),
+                'internalid'
             ]
         }).run().each(function (result) {
-            if (isSupportCase) {
-                var recordTypeValue = String(
-                    result.getValue('recordtype') || ''
-                );
-
-                var recordTypeText = '';
-
-                try {
-                    recordTypeText = String(
-                        result.getText('recordtype') || ''
-                    );
-                } catch (textError) {
-                    recordTypeText = '';
-                }
-
-                recordTypeValue = normalizeTemplateRecordType(
-                    recordTypeValue
-                );
-
-                recordTypeText = normalizeTemplateRecordType(
-                    recordTypeText
-                );
-
-                var isEmpty =
-                    (!recordTypeValue && !recordTypeText) ||
-                    recordTypeValue === 'none' ||
-                    recordTypeValue === '@none@' ||
-                    recordTypeText === 'none' ||
-                    recordTypeText === '@none@';
-
-                var isCase =
-                    recordTypeValue === 'case' ||
-                    recordTypeValue === 'supportcase' ||
-                    recordTypeText === 'case' ||
-                    recordTypeText === 'supportcase';
-
-                if (!isEmpty && !isCase) {
-                    return true;
-                }
-            }
-
             list.push({
                 id: String(
                     result.getValue('internalid') || ''
