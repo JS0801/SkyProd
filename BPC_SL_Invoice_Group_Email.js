@@ -93,7 +93,7 @@ define([
                 entityId: custId ? Number(custId) : null
             });
         }
-    } catch (e) {
+    } catch (mergeError) {
         if (isSupportCase) {
             merged = render.mergeEmail({
                 templateId: Number(templateId),
@@ -106,8 +106,23 @@ define([
         }
     }
 
-    context.response.setHeader({ name: 'Content-Type', value: 'application/json' });
-    context.response.write(JSON.stringify(result));
+    result.subject = merged && merged.subject
+        ? String(merged.subject)
+        : '';
+
+    result.body = merged && merged.body
+        ? String(merged.body)
+        : '';
+
+} catch (e) {
+    log.error('handleMerge error', e);
+}
+
+context.response.setHeader({
+    name: 'Content-Type',
+    value: 'application/json'
+});
+context.response.write(JSON.stringify(result));
 }
 
   function handleGet(context) {
