@@ -799,7 +799,8 @@ function normalizeTemplateRecordType(value) {
       + '        <div class="ns-panel" id="panel-attachments">'
       + (recType === 'supportcase'
         ? '          <div style="font-size:12px;color:#666;margin-bottom:10px;">Only files selected below will be attached.</div>'
-        : '          <div class="ns-row"><label>Attach Document</label><div style="display:flex;gap:10px;align-items:center"><label style="font-weight:normal"><input id="nsIncTxn" type="checkbox" /> INCLUDE RECORD PDF</label></div></div>')
+        : '          <div class="ns-row"><label>Attach Document</label><div style="display:flex;gap:10px;align-items:center"><label style="font-weight:normal"><input id="nsIncTxn" type="checkbox" /> INCLUDE RECORD PDF</label></div></div>'
+        )
       + '          <div class="ns-row ns-inline"><input id="nsFilePicker" type="file" multiple style="display:none" /><button class="ns-btn primary" type="button" id="nsChooseFilesBtn">Choose file(s)&hellip;</button><button class="ns-btn" type="button" id="nsRemoveAttachmentsBtn">Remove</button></div>'
       + '          <div class="ns-grid"><table id="nsAttTable"><thead><tr><th style="width:26px"><input type="checkbox" id="nsAttCheckAll"></th><th>Name</th><th style="width:80px">Size KB</th><th style="width:180px">Modified</th><th>Type</th></tr></thead><tbody></tbody></table></div>'
       + '        </div>'
