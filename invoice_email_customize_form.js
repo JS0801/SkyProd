@@ -14,8 +14,17 @@ define(['N/ui/serverWidget', 'N/search', 'N/record', 'N/render', 'N/file', 'N/ru
 
     // Invoice Groups do not have a class field
     const isInvoiceGroup = (recType === 'invoicegroup');
-    const classID = isInvoiceGroup ? currRec.getValue('custrecord_invoicegroup_dba') : currRec.getValue('class');
-    const custID = isInvoiceGroup ? currRec.getValue('customer') : currRec.getValue('entity');
+const isSupportCase = (recType === 'supportcase');
+
+const classID = isInvoiceGroup
+  ? currRec.getValue('custrecord_invoicegroup_dba')
+  : (isSupportCase ? '' : currRec.getValue('class'));
+
+const custID = isInvoiceGroup
+  ? currRec.getValue('customer')
+  : (isSupportCase
+      ? currRec.getValue('company')
+      : currRec.getValue('entity'));
 
     log.debug('Record Type', recType);
     log.debug('custID', custID);
