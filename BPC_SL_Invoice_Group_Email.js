@@ -21,6 +21,7 @@ define([
         return;
     }
     handleGet(context);
+    return;
 }
 
       if (context.request.method === 'POST') {
@@ -43,26 +44,85 @@ define([
     var recType    = req.parameters.rectype || '';
     var result = { subject: '', body: '' };
 
+    // try {
+    //     var isTxn = recType && recType !== 'invoicegroup';
+    //     var merged;
+    //     try {
+    //         merged = render.mergeEmail({
+    //             templateId: Number(templateId),
+    //             transactionId: isTxn ? (Number(recId) || null) : null,
+    //             entityId: custId ? Number(custId) : null
+    //         });
+    //     } catch (e) {
+    //         merged = render.mergeEmail({ templateId: Number(templateId) }); // your old fallback
+    //     }
+    //     result.subject = merged && merged.subject ? String(merged.subject) : '';
+    //     result.body    = merged && merged.body    ? String(merged.body)    : '';
+    // } 
+    // catch (e) {
+    //     log.error('handleMerge error', e);
+    // }
+
     try {
-        var isTxn = recType && recType !== 'invoicegroup';
-        var merged;
-        try {
+    var isSupportCase = recType === 'supportcase';
+    var isTxn = recType &&
+                recType !== 'invoicegroup' &&
+                recType !== 'supportcase';
+
+    var merged;
+
+    try {
+        if (isSupportCase) {
+            var caseMergeOptions = {
+                templateId: Number(templateId),
+                supportCaseId: Number(recId)
+            };
+
+            if (custId) {
+                caseMergeOptions.recipient = {
+                    type: 'customer',
+                    id: Number(custId)
+                };
+            }
+
+            merged = render.mergeEmail(caseMergeOptions);
+        } else {
             merged = render.mergeEmail({
                 templateId: Number(templateId),
-                transactionId: isTxn ? (Number(recId) || null) : null,
+                transactionId: isTxn ? Number(recId) : null,
                 entityId: custId ? Number(custId) : null
             });
-        } catch (e) {
-            merged = render.mergeEmail({ templateId: Number(templateId) }); // your old fallback
         }
-        result.subject = merged && merged.subject ? String(merged.subject) : '';
-        result.body    = merged && merged.body    ? String(merged.body)    : '';
-    } catch (e) {
-        log.error('handleMerge error', e);
+    } catch (mergeError) {
+        if (isSupportCase) {
+            merged = render.mergeEmail({
+                templateId: Number(templateId),
+                supportCaseId: Number(recId)
+            });
+        } else {
+            merged = render.mergeEmail({
+                templateId: Number(templateId)
+            });
+        }
     }
 
-    context.response.setHeader({ name: 'Content-Type', value: 'application/json' });
-    context.response.write(JSON.stringify(result));
+    result.subject = merged && merged.subject
+        ? String(merged.subject)
+        : '';
+
+    result.body = merged && merged.body
+        ? String(merged.body)
+        : '';
+
+} catch (e) {
+    log.error('handleMerge error', e);
+}
+
+context.response.setHeader({
+    name: 'Content-Type',
+    value: 'application/json'
+});
+context.response.write(JSON.stringify(result));
 }
 
   function handleGet(context) {
@@ -110,7 +170,7 @@ var data = getPopupData(recId, authorObj, customerId, classId, recType);
       type: ui.FieldType.INLINEHTML,
       label: 'Email HTML'
     });
-    htmlFld.defaultValue = buildHtml();
+    htmlFld.defaultValue = buildHtml(recType);
 
     context.response.writePage(form);
   }
@@ -173,7 +233,11 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
       }
     }
 
-    if (payload.includeTransaction && recId) {
+    if (
+    payload.includeTransaction &&
+    recId &&
+    recordType !== 'supportcase'
+) {
     try {
         if (recordType === 'invoicegroup') {
             var invoiceGroupRecord = record.load({ type: 'invoicegroup', id: Number(recId) });
@@ -201,6 +265,26 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
         log.error('PDF generation error', pdfErr);
     }
 }
+
+    var relatedRecords;
+
+if (recordType === 'invoicegroup') {
+    relatedRecords = {
+        entityId: Number(custID)
+    };
+} else if (recordType === 'supportcase') {
+    relatedRecords = {
+        activityId: Number(recId)
+    };
+
+    if (custID) {
+        relatedRecords.entityId = Number(custID);
+    }
+} else {
+    relatedRecords = {
+        transactionId: Number(recId)
+    };
+}
     
     try {
       email.send({
@@ -211,10 +295,8 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
         subject: payload.subject || '',
         body: payload.body || '',
         attachments: attachments,
-        relatedRecords: (recordType === 'invoicegroup') ? { entityId: custID } : { transactionId: Number(recId) }
+        relatedRecords: relatedRecords //(recordType === 'invoicegroup') ? { entityId: custID } : { transactionId: Number(recId) }
       });
-
-      log.debug('related Record', {custID, recId, recordType})
 
       log.debug('custID', custID)
 
@@ -226,26 +308,27 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
   }
 
   function writeScriptResponse(context, success, message) {
-    var safeMessage = escapeHtml(message || '');
+    var jsMessage = JSON.stringify(String(message || ''));
     var html = ''
       + '<html><body><script>'
+      + '(function(){'
       + 'var ok=' + (success ? 'true' : 'false') + ';'
-      + 'var msg="' + safeMessage.replace(/"/g, '\\"') + '";'
+      + 'var msg=' + jsMessage + ';'
+      + 'function closeParent(refreshParent){'
+      + '  try{'
+      + '    if(window.parent && window.parent !== window){'
+      + '      window.parent.postMessage({source:"bpc-invoice-group-email",action:"close",refreshParent:!!refreshParent},"*");'
+      + '    }else{'
+      + '      window.close();'
+      + '    }'
+      + '  }catch(e){}'
+      + '}'
       + 'if(ok){'
-      + '  alert(msg);'
-      + '  if(window.parent && typeof window.parent.closeInvoiceGroupEmailPopup==="function"){'
-      + '    window.parent.closeInvoiceGroupEmailPopup();'
-      + '    try{window.parent.location.reload();}catch(e){}'
-      + '  }'
+      + '  closeParent(true);'
       + '}else{'
       + '  alert("Failed to send email: " + msg);'
-      + '  if(window.parent && window.parent.document){'
-      + '    try{'
-      + '      var loader = window.parent.document.getElementById("nsEmailLoaderOverlay");'
-      + '      if(loader) loader.style.display="none";'
-      + '    }catch(e2){}'
-      + '  }'
       + '}'
+      + '}());'
       + '</script></body></html>';
 
     context.response.write(html);
@@ -255,7 +338,7 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
     var out = { customerList: [], emailTemplateList: [], employeeList: [], preMergedById: {} };
     out.customerList     = getCustomerRecipients(customerId, recId, recType);
     out.employeeList     = getEmployeeList(passedAuthor, classId);   // unchanged
-    out.emailTemplateList= getEmailTemplates();                       // unchanged
+    out.emailTemplateList= getEmailTemplates(recType);                       // unchanged
    // out.preMergedById    = getPreMergedTemplates(out.emailTemplateList, customerId, recId, recType);
     return out;
 }
@@ -275,11 +358,8 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
           "WHERE entity.email IS NOT NULL " +
           "AND entity.ID = " + Number(custID);
 
-        log.debug('sql', sql)
-
         var rs = query.runSuiteQL({ query: sql });
         var rows = rs.asMappedResults() || [];
-        log.debug('rows', rows)
 
         if (rows.length > 0) {
           pushRecipient(list, added, {
@@ -298,11 +378,22 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
 
 
         var contactFilters;
-        if (recType === 'invoicegroup') {
-            contactFilters = [['company', 'anyof', custID], 'AND', ['email', 'isnotempty', '']];
-        } else if (recId) {
-            contactFilters = [['transaction.internalid', 'anyof', recId], 'AND', ['email', 'isnotempty', '']];
-        }
+        if (
+    recType === 'invoicegroup' ||
+    recType === 'supportcase'
+) {
+    contactFilters = [
+        ['company', 'anyof', custID],
+        'AND',
+        ['email', 'isnotempty', '']
+    ];
+} else if (recId) {
+    contactFilters = [
+        ['transaction.internalid', 'anyof', recId],
+        'AND',
+        ['email', 'isnotempty', '']
+    ];
+}
 
         
         search.create({
@@ -484,25 +575,66 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
     return employeeList;
 }
 
-  function getEmailTemplates() {
+  // function getEmailTemplates() {
+  //   var list = [];
+  //   try {
+  //     search.create({
+  //       type: 'emailtemplate',
+  //       filters: [['isinactive', 'is', 'F']],
+  //       columns: ['name', 'internalid']
+  //     }).run().each(function (result) {
+  //       list.push({
+  //         id: String(result.getValue('internalid') || ''),
+  //         name: String(result.getValue('name') || '')
+  //       });
+  //       return true;
+  //     });
+  //   } catch (e) {
+  //     log.error('email template fetch error', e);
+  //   }
+  //   return list;
+  // }
+
+  function getEmailTemplates(recType) {
     var list = [];
+
     try {
-      search.create({
-        type: 'emailtemplate',
-        filters: [['isinactive', 'is', 'F']],
-        columns: ['name', 'internalid']
-      }).run().each(function (result) {
-        list.push({
-          id: String(result.getValue('internalid') || ''),
-          name: String(result.getValue('name') || '')
+        search.create({
+            type: 'emailtemplate',
+            filters: [
+                ['isinactive', 'is', 'F']
+            ],
+            columns: [
+                search.createColumn({
+                    name: 'name',
+                    sort: search.Sort.ASC
+                }),
+                'internalid'
+            ]
+        }).run().each(function (result) {
+            list.push({
+                id: String(
+                    result.getValue('internalid') || ''
+                ),
+                name: String(
+                    result.getValue('name') || ''
+                )
+            });
+
+            return true;
         });
-        return true;
-      });
     } catch (e) {
-      log.error('email template fetch error', e);
+        log.error('email template fetch error', e);
     }
+
     return list;
-  }
+}
+
+function normalizeTemplateRecordType(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '');
+}
 
   function getPreMergedTemplates(templateList, entityId, recId, recType) {
     var map = {};
@@ -559,7 +691,7 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
     fld.defaultValue = value || '';
   }
 
-  function buildHtml() {
+  function buildHtml(recType) {
     return ''
       + '<style>'
       + 'html,body{margin:0;padding:0;background:#fff;font-family:Arial,sans-serif;height:100%;overflow:hidden;}'
@@ -640,7 +772,10 @@ var recId      = payload.recordId   || req.parameters.recid   || '';
       + '        </div>'
 
       + '        <div class="ns-panel" id="panel-attachments">'
-      + '          <div class="ns-row"><label>Attach Document</label><div style="display:flex;gap:10px;align-items:center"><label style="font-weight:normal"><input id="nsIncTxn" type="checkbox" /> INCLUDE RECORD PDF</label></div></div>'
+      + (recType === 'supportcase'
+        ? '          <div style="font-size:12px;color:#666;margin-bottom:10px;">Only files selected below will be attached.</div>'
+        : '          <div class="ns-row"><label>Attach Document</label><div style="display:flex;gap:10px;align-items:center"><label style="font-weight:normal"><input id="nsIncTxn" type="checkbox" /> INCLUDE RECORD PDF</label></div></div>'
+        )
       + '          <div class="ns-row ns-inline"><input id="nsFilePicker" type="file" multiple style="display:none" /><button class="ns-btn primary" type="button" id="nsChooseFilesBtn">Choose file(s)&hellip;</button><button class="ns-btn" type="button" id="nsRemoveAttachmentsBtn">Remove</button></div>'
       + '          <div class="ns-grid"><table id="nsAttTable"><thead><tr><th style="width:26px"><input type="checkbox" id="nsAttCheckAll"></th><th>Name</th><th style="width:80px">Size KB</th><th style="width:180px">Modified</th><th>Type</th></tr></thead><tbody></tbody></table></div>'
       + '        </div>'
