@@ -220,33 +220,49 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
         var jobRec;
         var jobRecId = null;
         var externalKey = jobGroup.externalKey || itemsInGroup[0].lineuniquekey;
+        var existingJobId = skyJobMap[externalKey] || findExistingSkyJobId(soId, externalKey, itemsInGroup[0]);
 
-        if (skyJobMap[externalKey]) {
+        if (existingJobId) {
             jobRec = record.load({
                 type: 'customrecord_sky_job',
-                id: skyJobMap[externalKey],
+                id: existingJobId,
                 isDynamic: true
             });
-            jobRecId = skyJobMap[externalKey];
+            jobRecId = existingJobId;
         } else {
             jobRec = record.create({
                 type: 'customrecord_sky_job',
                 isDynamic: true
             });
-            jobRec.setValue({ fieldId: 'externalid', value: externalKey + "_ds" });
+            jobRec.setValue({ fieldId: 'externalid', value: getSkyJobExternalId(externalKey) });
         }
 
-        jobRec.setValue({ fieldId: 'custrecord_sky_workorder', value: itemsInGroup[0].woid });
-        jobRec.setValue({ fieldId: 'custrecord_sky_item_group', value: itemsInGroup[0].clusterNum });
-        jobRec.setValue({ fieldId: 'custrecord_sky_lineid', value: itemsInGroup[0].lineid });
-        jobRec.setValue({ fieldId: 'custrecord_sky_sales_order', value: soId });
-        jobRec.setValue({ fieldId: 'custrecord_sky_ship_date', value: prepared.shipDate });
-        jobRec.setValue({ fieldId: 'custrecord_sky_ship_method', value: prepared.shipMethod });
-        jobRec.setValue({ fieldId: 'custrecord_sky_parent_item', value: itemsInGroup[0].itemId });
+        setSkyJobHeaderValues(jobRec, prepared, jobGroup);
 
-        parseAndPopulateColors(jobGroup.pmsColors, jobRec);
+        var jobId;
+        try {
+            jobId = jobRec.save();
+        } catch (e) {
+            if (existingJobId || !isDuplicateCustomRecordError(e)) throw e;
 
-        const jobId = jobRec.save();
+            var duplicateJobId = findExistingSkyJobId(soId, externalKey, itemsInGroup[0]);
+            if (!duplicateJobId) throw e;
+
+            log.audit('Duplicate Sky Job create detected; updating existing Sky Job', {
+                soId: soId,
+                duplicateJobId: duplicateJobId,
+                externalKey: externalKey
+            });
+
+            jobRec = record.load({
+                type: 'customrecord_sky_job',
+                id: duplicateJobId,
+                isDynamic: true
+            });
+            setSkyJobHeaderValues(jobRec, prepared, jobGroup);
+            jobId = jobRec.save();
+        }
+
         jobRecId = jobId;
         skyJobMap[externalKey] = jobId;
 
@@ -258,9 +274,99 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
         });
 
         createOrUpdatePlanningDetails(prepared, itemsInGroup, jobId, jobChildMap);
-        updateJobImpressionTotals(jobRecId);
+        try {
+            updateJobImpressionTotals(jobRecId);
+        } catch (e) {
+            log.error('Error updating Sky Job impression totals', {
+                jobRecId: jobRecId,
+                error: e
+            });
+        }
 
         return jobId;
+    }
+
+    function getSkyJobExternalId(externalKey) {
+        if (!externalKey) return externalKey;
+        var value = String(externalKey);
+        return value.indexOf('_ds') === value.length - 3 ? value : value + '_ds';
+    }
+
+    function setSkyJobHeaderValues(jobRec, prepared, jobGroup) {
+        const itemsInGroup = jobGroup.itemsInGroup;
+
+        jobRec.setValue({ fieldId: 'custrecord_sky_workorder', value: itemsInGroup[0].woid });
+        jobRec.setValue({ fieldId: 'custrecord_sky_item_group', value: itemsInGroup[0].clusterNum });
+        jobRec.setValue({ fieldId: 'custrecord_sky_lineid', value: itemsInGroup[0].lineid });
+        jobRec.setValue({ fieldId: 'custrecord_sky_sales_order', value: prepared.soId });
+        jobRec.setValue({ fieldId: 'custrecord_sky_ship_date', value: prepared.shipDate });
+        jobRec.setValue({ fieldId: 'custrecord_sky_ship_method', value: prepared.shipMethod });
+        jobRec.setValue({ fieldId: 'custrecord_sky_parent_item', value: itemsInGroup[0].itemId });
+
+        parseAndPopulateColors(jobGroup.pmsColors, jobRec);
+    }
+
+    function isDuplicateCustomRecordError(error) {
+        return !!error && (
+            error.name === 'DUP_CSTM_RCRD_ENTRY' ||
+            error.code === 'DUP_CSTM_RCRD_ENTRY' ||
+            String(error.message || '').indexOf('already a Custom Record Entry') !== -1
+        );
+    }
+
+    function findExistingSkyJobId(soId, externalKey, headerLine) {
+        var foundId = null;
+
+        var skyJobSearch = search.create({
+            type: 'customrecord_sky_job',
+            filters: [
+                ['custrecord_sky_sales_order', 'anyof', soId]
+            ],
+            columns: [
+                search.createColumn({ name: 'internalid' }),
+                search.createColumn({ name: 'externalid' }),
+                search.createColumn({ name: 'name' }),
+                search.createColumn({ name: 'custrecord_sky_workorder' }),
+                search.createColumn({ name: 'custrecord_sky_item_group' }),
+                search.createColumn({ name: 'custrecord_sky_lineid' }),
+                search.createColumn({ name: 'custrecord_sky_parent_item' })
+            ]
+        });
+
+        skyJobSearch.run().each(function (result) {
+            var internalId = result.getValue({ name: 'internalid' });
+            var existingExternalId = result.getValue({ name: 'externalid' });
+            var existingName = result.getValue({ name: 'name' });
+            var existingWorkOrder = result.getValue({ name: 'custrecord_sky_workorder' });
+            var existingItemGroup = result.getValue({ name: 'custrecord_sky_item_group' });
+            var existingLineId = result.getValue({ name: 'custrecord_sky_lineid' });
+            var existingParentItem = result.getValue({ name: 'custrecord_sky_parent_item' });
+
+            if (
+                valuesMatch(existingExternalId, externalKey) ||
+                valuesMatch(existingExternalId, getSkyJobExternalId(externalKey)) ||
+                valuesMatch(existingName, externalKey) ||
+                valuesMatch(existingName, getSkyJobExternalId(externalKey)) ||
+                (
+                    valuesMatch(existingWorkOrder, headerLine.woid) &&
+                    valuesMatch(existingItemGroup, headerLine.clusterNum) &&
+                    valuesMatch(existingLineId, headerLine.lineid) &&
+                    valuesMatch(existingParentItem, headerLine.itemId)
+                )
+            ) {
+                foundId = internalId;
+                return false;
+            }
+
+            return true;
+        });
+
+        return foundId;
+    }
+
+    function valuesMatch(left, right) {
+        if (left === null || left === undefined || right === null || right === undefined) return false;
+        return String(left) === String(right);
     }
 
     function createOrUpdatePlanningDetails(prepared, itemsInGroup, jobId, jobChildMap) {
@@ -616,11 +722,33 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
         customrecord_sky_jobSearchObj.run().each(function (result) {
             var externalid = result.getValue('externalid');
-            if (externalid) returnObj[externalid] = result.getValue('internalid');
+            var internalId = result.getValue('internalid');
+
+            if (externalid) {
+                returnObj[externalid] = internalId;
+
+                var normalizedExternalId = String(externalid);
+                if (normalizedExternalId.indexOf('_ds') === normalizedExternalId.length - 3) {
+                    returnObj[normalizedExternalId.substring(0, normalizedExternalId.length - 3)] = internalId;
+                }
+            }
+
             return true;
         });
 
         return returnObj;
+    }
+
+    function getSkyJobCount(soId) {
+        return search.create({
+            type: 'customrecord_sky_job',
+            filters: [
+                ['custrecord_sky_sales_order', 'anyof', soId]
+            ],
+            columns: [
+                search.createColumn({ name: 'internalid' })
+            ]
+        }).runPaged().count;
     }
 
     function getJobChildRecord(recid) {
@@ -847,81 +975,159 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
     }
 
     function getInputData() {
-        return search.create({
+        var workItems = [];
+
+        var pendingSalesOrderSearch = search.create({
             type: search.Type.SALES_ORDER,
             filters: [
                 ['mainline', 'is', 'T'],
                 'AND',
-                [QUEUE_FIELDS.pending, 'is', 'T'],
-                'AND',
-                [QUEUE_FIELDS.status, 'isnot', STATUS.ERROR],
-                'AND',
-                ['internalid', 'noneof', '790']
+                [QUEUE_FIELDS.pending, 'is', 'T']
             ],
             columns: [
                 search.createColumn({ name: 'internalid' }),
-                search.createColumn({ name: 'tranid' })
+                search.createColumn({ name: 'tranid' }),
+                search.createColumn({ name: QUEUE_FIELDS.status }),
+                search.createColumn({ name: QUEUE_FIELDS.total })
             ]
         });
+
+        pendingSalesOrderSearch.run().each(function (result) {
+            var soId = result.getValue({ name: 'internalid' });
+            var queueStatus = result.getValue({ name: QUEUE_FIELDS.status });
+            var queuedTotal = Number(result.getValue({ name: QUEUE_FIELDS.total })) || 0;
+
+            if (queueStatus === STATUS.ERROR && queuedTotal > LIMITS.MAX_JOBS_PER_SO) {
+                log.audit('Skipping over-limit Sky Job Sales Order', {
+                    soId: soId,
+                    queuedTotal: queuedTotal
+                });
+                return true;
+            }
+
+            try {
+                var prepared = prepareSalesOrder(soId);
+                var totalJobs = prepared.jobGroups.length;
+
+                log.audit('Sky job planning - prepared Sales Order', {
+                    soId: soId,
+                    source: 'Map/Reduce getInputData',
+                    totalJobs: totalJobs,
+                    workItemMode: 'one job per map'
+                });
+
+                if (totalJobs > LIMITS.MAX_JOBS_PER_SO) {
+                    setQueueStatus(soId, {
+                        pending: true,
+                        status: STATUS.ERROR,
+                        total: totalJobs,
+                        processed: getSkyJobCount(soId),
+                        message: 'Sales Order requires ' + totalJobs + ' jobs; maximum supported is ' + LIMITS.MAX_JOBS_PER_SO + '.'
+                    });
+                    return true;
+                }
+
+                if (!totalJobs) {
+                    setQueueStatus(soId, {
+                        pending: false,
+                        status: STATUS.COMPLETE,
+                        total: 0,
+                        processed: 0,
+                        message: 'No eligible Sky Jobs found for this Sales Order.'
+                    });
+                    return true;
+                }
+
+                setQueueStatus(soId, {
+                    pending: true,
+                    status: STATUS.PROCESSING,
+                    total: totalJobs,
+                    processed: getSkyJobCount(soId),
+                    message: 'Queued ' + totalJobs + ' Sky Job work items for Map/Reduce.'
+                });
+
+                for (var i = 0; i < prepared.jobGroups.length; i++) {
+                    workItems.push({
+                        soId: soId,
+                        totalJobs: totalJobs,
+                        shipDate: prepared.shipDate ? prepared.shipDate.getTime() : null,
+                        shipMethod: prepared.shipMethod || null,
+                        specialJobItemMap: prepared.specialJobItemMap || {},
+                        woidMap: prepared.woidMap || {},
+                        jobGroup: prepared.jobGroups[i]
+                    });
+                }
+            } catch (e) {
+                log.error('Error preparing Sky Job work items', {
+                    soId: soId,
+                    error: e
+                });
+
+                try {
+                    setQueueStatus(soId, {
+                        pending: true,
+                        status: STATUS.PENDING,
+                        message: 'Map/Reduce preparation error: ' + (e && e.message ? e.message : String(e))
+                    });
+                } catch (statusError) {
+                    log.error('Unable to update Sales Order after preparation error', statusError);
+                }
+            }
+
+            return true;
+        });
+
+        return workItems;
     }
 
     function map(context) {
-        var searchResult = JSON.parse(context.value);
-        var soId = searchResult.id;
-
-        if (!soId && searchResult.values && searchResult.values.internalid) {
-            soId = searchResult.values.internalid.value || searchResult.values.internalid;
-        }
+        var workItem = JSON.parse(context.value);
+        var soId = workItem.soId;
 
         if (!soId) {
-            log.error('Queued Sky Job Sales Order result missing internal ID', searchResult);
+            log.error('Sky Job work item missing Sales Order ID', workItem);
             return;
         }
 
         try {
-            setQueueStatus(soId, {
-                pending: true,
-                status: STATUS.PROCESSING,
-                message: 'Map/Reduce processing started.'
-            });
-
-            const result = processSalesOrder(soId, {
-                maxJobs: LIMITS.MAX_JOBS_PER_SO,
-                source: 'Map/Reduce'
-            });
-
-            if (result.maxExceeded) {
-                setQueueStatus(soId, {
-                    pending: true,
-                    status: STATUS.ERROR,
-                    total: result.totalJobs,
-                    processed: 0,
-                    message: result.message
-                });
-                log.error('Sky Job count exceeds supported maximum in Map/Reduce', result);
-                return;
-            }
+            var prepared = getPreparedFromWorkItem(workItem);
+            var skyJobMap = getChildRecord(soId);
+            var jobChildMap = getJobChildRecord(soId);
+            var jobId = upsertJobGroup(prepared, workItem.jobGroup, skyJobMap, jobChildMap);
+            var processedCount = getSkyJobCount(soId);
+            var isComplete = processedCount >= Number(workItem.totalJobs || 0);
 
             setQueueStatus(soId, {
-                pending: false,
-                status: STATUS.COMPLETE,
-                total: result.totalJobs,
-                processed: result.processedJobs,
-                message: result.message
+                pending: !isComplete,
+                status: isComplete ? STATUS.COMPLETE : STATUS.PROCESSING,
+                total: workItem.totalJobs,
+                processed: processedCount,
+                message: isComplete
+                    ? 'Processed all ' + processedCount + ' Sky Jobs.'
+                    : 'Processed Sky Job ' + processedCount + ' of ' + workItem.totalJobs + '.'
             });
 
-            log.audit('Sky Job Map/Reduce processing complete', result);
-        } catch (error) {
-            log.error('Error processing queued Sky Job Sales Order', {
+            log.audit('Sky Job Map/Reduce work item complete', {
                 soId: soId,
+                jobId: jobId,
+                cluster: workItem.jobGroup && workItem.jobGroup.cluster,
+                externalKey: workItem.jobGroup && workItem.jobGroup.externalKey,
+                processedCount: processedCount,
+                totalJobs: workItem.totalJobs
+            });
+        } catch (error) {
+            log.error('Error processing Sky Job work item', {
+                soId: soId,
+                workItem: workItem,
                 error: error
             });
 
             try {
                 setQueueStatus(soId, {
                     pending: true,
-                    status: STATUS.ERROR,
-                    message: error && error.message ? error.message : String(error)
+                    status: STATUS.PENDING,
+                    processed: getSkyJobCount(soId),
+                    message: 'Map/Reduce work item error: ' + (error && error.message ? error.message : String(error))
                 });
             } catch (queueError) {
                 log.error('Unable to update Sky Job queue fields after Map/Reduce error', queueError);
@@ -929,6 +1135,16 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
             throw error;
         }
+    }
+
+    function getPreparedFromWorkItem(workItem) {
+        return {
+            soId: workItem.soId,
+            shipDate: workItem.shipDate ? new Date(workItem.shipDate) : null,
+            shipMethod: workItem.shipMethod || null,
+            specialJobItemMap: workItem.specialJobItemMap || {},
+            woidMap: workItem.woidMap || {}
+        };
     }
 
     function summarize(summary) {
