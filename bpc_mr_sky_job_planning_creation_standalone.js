@@ -854,7 +854,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                 'AND',
                 [QUEUE_FIELDS.pending, 'is', 'T'],
                 'AND',
-                [QUEUE_FIELDS.status, 'isnot', STATUS.ERROR]
+                [QUEUE_FIELDS.status, 'isnot', STATUS.ERROR],
                 'AND',
                 ['internalid', 'noneof', '790']
             ],
