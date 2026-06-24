@@ -233,7 +233,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                 type: 'customrecord_sky_job',
                 isDynamic: true
             });
-            jobRec.setValue({ fieldId: 'externalid', value: externalKey });
+            jobRec.setValue({ fieldId: 'externalid', value: externalKey + "_ds" });
         }
 
         jobRec.setValue({ fieldId: 'custrecord_sky_workorder', value: itemsInGroup[0].woid });
