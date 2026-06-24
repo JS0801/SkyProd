@@ -855,6 +855,8 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                 [QUEUE_FIELDS.pending, 'is', 'T'],
                 'AND',
                 [QUEUE_FIELDS.status, 'isnot', STATUS.ERROR]
+                'AND',
+                ['internalid', 'noneof', '790']
             ],
             columns: [
                 search.createColumn({ name: 'internalid' }),
