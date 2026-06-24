@@ -8,7 +8,6 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
     const SKY_JOB_MR_FIELDS = {
         pending: 'custbody_bpc_sky_job_mr_pending',
         status: 'custbody_bpc_sky_job_mr_status',
-        total: 'custbody_bpc_sky_job_total_count',
         message: 'custbody_bpc_sky_job_mr_message'
     };
 
@@ -20,7 +19,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
             const newRecord = context.newRecord;
             const soId = newRecord.id;
             const isQueuedForMR = newRecord.getValue({ fieldId: SKY_JOB_MR_FIELDS.pending });
-            if (isQueuedForMR) return;
+            if (isQueuedForMR === true || isQueuedForMR === 'T') return;
 
             const mappingRefItems = getMappingItems();
             log.debug('soId', soId)
@@ -40,7 +39,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
             });
             const searchResultCount = customrecord_sky_jobSearchObj.runPaged().count;
             log.debug("customrecord_sky_jobSearchObj result count", searchResultCount);
-          //  if (searchResultCount > 0) return;
+            if (searchResultCount > 0) return;
 
             const soRec = record.load({ type: 'salesorder', id: soId })
 
@@ -740,9 +739,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
         return returnArray;
     }
 
-    var pmsColorCache = {};
-
-        function getSkyJobCreationCount(groupedItemsMap, specialJobItems) {
+    function getSkyJobCreationCount(groupedItemsMap, specialJobItems) {
         var jobCount = 0;
 
         for (const cluster in groupedItemsMap) {
@@ -762,13 +759,10 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
     }
 
     function markSalesOrderForMapReduce(soId, skyJobCreationCount) {
-        var message = 'Sky Job creation count is ' + skyJobCreationCount +
-            '. Queued for Map/Reduce because User Event limit is ' + USER_EVENT_JOB_LIMIT + '.';
         var submitValues = {};
         submitValues[SKY_JOB_MR_FIELDS.pending] = true;
         submitValues[SKY_JOB_MR_FIELDS.status] = 'PENDING';
-        submitValues[SKY_JOB_MR_FIELDS.total] = skyJobCreationCount;
-        submitValues[SKY_JOB_MR_FIELDS.message] = message;
+        submitValues[SKY_JOB_MR_FIELDS.message] = '';
 
         record.submitFields({
             type: record.Type.SALES_ORDER,
@@ -782,10 +776,11 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
         log.audit('Sales Order queued for Sky Job Map/Reduce', {
             soId: soId,
-            skyJobCreationCount: skyJobCreationCount,
-            message: message
+            skyJobCreationCount: skyJobCreationCount
         });
     }
+
+    var pmsColorCache = {};
 
     function parseAndPopulateColors(colorString, jobRec) {
 
