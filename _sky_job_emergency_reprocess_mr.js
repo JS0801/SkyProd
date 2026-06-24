@@ -13,7 +13,7 @@
  *   getInputData → collect flagged SO IDs
  *   map          → per SO: read lines, build job structure, emit one entry per job (lightweight)
  *   reduce       → per job: routing searches, run-rate lookups, record creates/updates,
- *                  impressions fix (each job gets its own 10,000 unit budget)
+ *                  impressions fix (each job gets its own 5000 unit budget)
  *   summarize    → uncheck error flags on all processed SOs & jobs
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -150,7 +150,7 @@ define(['N/record', 'N/search', 'N/log', 'N/format'], function (record, search, 
     }
 
     // =========================================================================
-    // REDUCE  (~heavy — one job per call, full 10,000 unit budget per job)
+    // REDUCE  (~heavy — one job per call, full 5000 unit budget per job)
     // Creates/updates job record + planning details + fixes impressions
     // =========================================================================
     function reduce(context) {
