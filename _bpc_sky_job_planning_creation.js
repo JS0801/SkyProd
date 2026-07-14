@@ -4,6 +4,13 @@
 */
 define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
+    const USER_EVENT_JOB_LIMIT = 8;
+    const SKY_JOB_MR_FIELDS = {
+        pending: 'custbody_bpc_sky_job_mr_pending',
+        status: 'custbody_bpc_sky_job_mr_status',
+        message: 'custbody_bpc_sky_job_mr_message'
+    };
+
     function afterSubmit(context) {
         try {
             log.debug('type', context.type)
@@ -11,6 +18,9 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
             const newRecord = context.newRecord;
             const soId = newRecord.id;
+            const isQueuedForMR = newRecord.getValue({ fieldId: SKY_JOB_MR_FIELDS.pending });
+            if (isQueuedForMR === true || isQueuedForMR === 'T') return;
+
             const mappingRefItems = getMappingItems();
             log.debug('soId', soId)
             log.debug('mappingRefItems', mappingRefItems)
@@ -94,6 +104,14 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
             log.debug('Special Job Items with WOID', specialJobItems);
             log.debug('Grouped Items by Cluster', groupedItemsMap);
             log.debug('Item Quantity Map from SO', itemQuantityMap);
+
+            const skyJobCreationCount = getSkyJobCreationCount(groupedItemsMap, specialJobItems);
+            log.debug('skyJobCreationCount', skyJobCreationCount);
+
+            if (skyJobCreationCount > USER_EVENT_JOB_LIMIT) {
+                markSalesOrderForMapReduce(soId, skyJobCreationCount);
+                return;
+            }
 
             var sky_jobRec = getChildRecord(soId);
             var job_ChildRec = getJobChildRecord(soId);
@@ -359,7 +377,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                             search.createColumn({
                                 name: "formulatext",
                                 summary: "GROUP",
-                                formula: "CASE   WHEN {custrecord_bpc_planning_job.custrecord_bpc_planning_op_name} != 'Machine Cutting Run' AND {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} IN   ('Traditional', 'Traditional : Screen Print', 'Traditional : Pad Print', 'Hi-Speed', 'Digital')   THEN 'Regular' WHEN {custrecord_bpc_planning_job.custrecord_bpc_planning_op_name} = 'Machine Cutting Run' AND {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Digital'   THEN 'CUT'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Hot Stamp'   THEN 'HO'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Emboss'   THEN 'EM'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Deboss'   THEN 'DE'END",                                
+                                formula: "CASE   WHEN {custrecord_bpc_planning_job.custrecord_bpc_planning_op_name} != 'Machine Cutting Run' AND {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} IN   ('Traditional', 'Traditional : Screen Print', 'Traditional : Pad Print', 'Hi-Speed', 'Digital ')   THEN 'Regular' WHEN {custrecord_bpc_planning_job.custrecord_bpc_planning_op_name} = 'Machine Cutting Run' AND {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Digital '   THEN 'CUT'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Hot Stamp'   THEN 'HO'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Emboss'   THEN 'EM'  WHEN {custrecord_bpc_planning_job.custrecord_bpc_plandetail_print_method} = 'Traditional : Deboss'   THEN 'DE'END",                                
                                 label: "Machine"
                             }),
                             // search.createColumn({
@@ -436,7 +454,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                     var results = s.run().getRange({ start: 0, end: 1000 }) || [];
                     if (!results.length) {
                         log.debug('SKY Job', 'No search results. Nothing to update.');
-                        continue;
+                        return;
                     }
 
                     for (var i = 0; i < results.length; i++) {
@@ -719,6 +737,47 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
         });
 
         return returnArray;
+    }
+
+    function getSkyJobCreationCount(groupedItemsMap, specialJobItems) {
+        var jobCount = 0;
+
+        for (const cluster in groupedItemsMap) {
+            const itemsInObject = distributeEmptyWoidItems(groupedItemsMap[cluster]);
+
+            for (const spItem in itemsInObject) {
+                const itemsInGroup = itemsInObject[spItem];
+                const hasSpecialJobItem = itemsInGroup.some(groupItem =>
+                    specialJobItems.includes(groupItem.itemId)
+                );
+
+                if (hasSpecialJobItem) jobCount++;
+            }
+        }
+
+        return jobCount;
+    }
+
+    function markSalesOrderForMapReduce(soId, skyJobCreationCount) {
+        var submitValues = {};
+        submitValues[SKY_JOB_MR_FIELDS.pending] = true;
+        submitValues[SKY_JOB_MR_FIELDS.status] = 'PENDING';
+        submitValues[SKY_JOB_MR_FIELDS.message] = '';
+
+        record.submitFields({
+            type: record.Type.SALES_ORDER,
+            id: soId,
+            values: submitValues,
+            options: {
+                enableSourcing: false,
+                ignoreMandatoryFields: true
+            }
+        });
+
+        log.audit('Sales Order queued for Sky Job Map/Reduce', {
+            soId: soId,
+            skyJobCreationCount: skyJobCreationCount
+        });
     }
 
     var pmsColorCache = {};
