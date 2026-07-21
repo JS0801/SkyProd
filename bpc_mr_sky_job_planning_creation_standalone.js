@@ -624,7 +624,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                 jobRecId: jobRecId,
                 message: 'No search results. Nothing to update.'
             });
-            return;
+            continue;
         }
 
         for (var i = 0; i < results.length; i++) {
