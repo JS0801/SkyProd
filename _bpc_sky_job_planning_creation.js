@@ -4,7 +4,7 @@
 */
 define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
-    const USER_EVENT_JOB_LIMIT = 8;
+    const USER_EVENT_JOB_LIMIT = 6;
     const SKY_JOB_MR_FIELDS = {
         pending: 'custbody_bpc_sky_job_mr_pending',
         status: 'custbody_bpc_sky_job_mr_status',
