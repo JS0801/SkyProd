@@ -989,7 +989,9 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
             filters: [
                 ['mainline', 'is', 'T'],
                 'AND',
-                [QUEUE_FIELDS.pending, 'is', 'T']
+                [QUEUE_FIELDS.pending, 'is', 'T'],
+                "AND", 
+                ["status","noneof","SalesOrd:C","SalesOrd:H"]
             ],
             columns: [
                 search.createColumn({ name: 'internalid' }),
