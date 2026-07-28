@@ -65,10 +65,22 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                 const lineuniquekey = soRec.getSublistValue({ sublistId: 'item', fieldId: 'lineuniquekey', line: i });
                 const lineid = soRec.getSublistValue({ sublistId: 'item', fieldId: 'line', line: i });
                 const pmsColors = soRec.getSublistValue({ sublistId: 'item', fieldId: 'custcol_extend_orders_pms_colors', line: i });
+                const skipSkyJobLine = soRec.getSublistValue({ sublistId: 'item', fieldId: 'custcol_skip_sky_job', line: i });
                 log.debug('lineuniquekey', {
                     lineuniquekey: lineuniquekey,
                     pmsColors: pmsColors
                 })
+
+
+              if (skipSkyJobLine === true || skipSkyJobLine === 'T') {
+    log.debug('Skipping Sales Order item line for Sky Job', {
+        soId: soId,
+        line: i,
+        itemId: itemId,
+        lineuniquekey: lineuniquekey
+    });
+    continue;
+}
 
                 if (!itemId || !clusterNum) continue;
 
