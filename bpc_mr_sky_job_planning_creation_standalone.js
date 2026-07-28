@@ -12,8 +12,6 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
     const QUEUE_FIELDS = {
         pending: 'custbody_bpc_sky_job_mr_pending',
         status: 'custbody_bpc_sky_job_mr_status',
-        total: 'custbody_bpc_sky_job_total_count',
-        processed: 'custbody_bpc_sky_job_created_count',
         message: 'custbody_bpc_sky_job_mr_message'
     };
 
@@ -686,8 +684,6 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
         if (Object.prototype.hasOwnProperty.call(values, 'pending')) submitValues[QUEUE_FIELDS.pending] = values.pending;
         if (Object.prototype.hasOwnProperty.call(values, 'status')) submitValues[QUEUE_FIELDS.status] = values.status;
-        if (Object.prototype.hasOwnProperty.call(values, 'total')) submitValues[QUEUE_FIELDS.total] = values.total;
-        if (Object.prototype.hasOwnProperty.call(values, 'processed')) submitValues[QUEUE_FIELDS.processed] = values.processed;
         if (Object.prototype.hasOwnProperty.call(values, 'message')) submitValues[QUEUE_FIELDS.message] = values.message || '';
 
         if (!Object.keys(submitValues).length) return;
@@ -987,23 +983,12 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
             columns: [
                 search.createColumn({ name: 'internalid' }),
                 search.createColumn({ name: 'tranid' }),
-                search.createColumn({ name: QUEUE_FIELDS.status }),
-                search.createColumn({ name: QUEUE_FIELDS.total })
+                search.createColumn({ name: QUEUE_FIELDS.status })
             ]
         });
 
         pendingSalesOrderSearch.run().each(function (result) {
             var soId = result.getValue({ name: 'internalid' });
-            var queueStatus = result.getValue({ name: QUEUE_FIELDS.status });
-            var queuedTotal = Number(result.getValue({ name: QUEUE_FIELDS.total })) || 0;
-
-            if (queueStatus === STATUS.ERROR && queuedTotal > LIMITS.MAX_JOBS_PER_SO) {
-                log.audit('Skipping over-limit Sky Job Sales Order', {
-                    soId: soId,
-                    queuedTotal: queuedTotal
-                });
-                return true;
-            }
 
             try {
                 var prepared = prepareSalesOrder(soId);
@@ -1020,8 +1005,6 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                     setQueueStatus(soId, {
                         pending: true,
                         status: STATUS.ERROR,
-                        total: totalJobs,
-                        processed: getSkyJobCount(soId),
                         message: 'Sales Order requires ' + totalJobs + ' jobs; maximum supported is ' + LIMITS.MAX_JOBS_PER_SO + '.'
                     });
                     return true;
@@ -1031,9 +1014,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                     setQueueStatus(soId, {
                         pending: false,
                         status: STATUS.COMPLETE,
-                        total: 0,
-                        processed: 0,
-                        message: 'No eligible Sky Jobs found for this Sales Order.'
+                        message: ''
                     });
                     return true;
                 }
@@ -1041,9 +1022,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                 setQueueStatus(soId, {
                     pending: true,
                     status: STATUS.PROCESSING,
-                    total: totalJobs,
-                    processed: getSkyJobCount(soId),
-                    message: 'Queued ' + totalJobs + ' Sky Job work items for Map/Reduce.'
+                    message: ''
                 });
 
                 for (var i = 0; i < prepared.jobGroups.length; i++) {
@@ -1094,17 +1073,13 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
             var skyJobMap = getChildRecord(soId);
             var jobChildMap = getJobChildRecord(soId);
             var jobId = upsertJobGroup(prepared, workItem.jobGroup, skyJobMap, jobChildMap);
-            var processedCount = getSkyJobCount(soId);
-            var isComplete = processedCount >= Number(workItem.totalJobs || 0);
 
-            setQueueStatus(soId, {
-                pending: !isComplete,
-                status: isComplete ? STATUS.COMPLETE : STATUS.PROCESSING,
-                total: workItem.totalJobs,
-                processed: processedCount,
-                message: isComplete
-                    ? 'Processed all ' + processedCount + ' Sky Jobs.'
-                    : 'Processed Sky Job ' + processedCount + ' of ' + workItem.totalJobs + '.'
+            context.write({
+                key: soId,
+                value: JSON.stringify({
+                    jobId: jobId,
+                    totalJobs: workItem.totalJobs
+                })
             });
 
             log.audit('Sky Job Map/Reduce work item complete', {
@@ -1112,7 +1087,6 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
                 jobId: jobId,
                 cluster: workItem.jobGroup && workItem.jobGroup.cluster,
                 externalKey: workItem.jobGroup && workItem.jobGroup.externalKey,
-                processedCount: processedCount,
                 totalJobs: workItem.totalJobs
             });
         } catch (error) {
@@ -1125,8 +1099,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
             try {
                 setQueueStatus(soId, {
                     pending: true,
-                    status: STATUS.PENDING,
-                    processed: getSkyJobCount(soId),
+                    status: STATUS.ERROR,
                     message: 'Map/Reduce work item error: ' + (error && error.message ? error.message : String(error))
                 });
             } catch (queueError) {
@@ -1135,6 +1108,58 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
 
             throw error;
         }
+    }
+
+    function reduce(context) {
+        var soId = context.key;
+        var totalJobs = 0;
+        var currentStatus = getSalesOrderQueueStatus(soId);
+
+        if (currentStatus === STATUS.ERROR) {
+            log.audit('Skipping Sky Job finalize because Sales Order is in ERROR status', {
+                soId: soId
+            });
+            return;
+        }
+
+        for (var i = 0; i < context.values.length; i++) {
+            try {
+                var value = JSON.parse(context.values[i]);
+                totalJobs = Math.max(totalJobs, Number(value.totalJobs || 0));
+            } catch (e) {
+                log.error('Unable to parse Sky Job reduce value', {
+                    soId: soId,
+                    value: context.values[i],
+                    error: e
+                });
+            }
+        }
+
+        var existingJobCount = getSkyJobCount(soId);
+        var isComplete = totalJobs > 0 && existingJobCount >= totalJobs;
+
+        setQueueStatus(soId, {
+            pending: !isComplete,
+            status: isComplete ? STATUS.COMPLETE : STATUS.PROCESSING,
+            message: ''
+        });
+
+        log.audit('Sky Job Map/Reduce Sales Order finalized', {
+            soId: soId,
+            totalJobs: totalJobs,
+            existingJobCount: existingJobCount,
+            pending: !isComplete
+        });
+    }
+
+    function getSalesOrderQueueStatus(soId) {
+        var lookup = search.lookupFields({
+            type: search.Type.SALES_ORDER,
+            id: soId,
+            columns: [QUEUE_FIELDS.status]
+        });
+
+        return lookup && lookup[QUEUE_FIELDS.status] ? String(lookup[QUEUE_FIELDS.status]) : '';
     }
 
     function getPreparedFromWorkItem(workItem) {
@@ -1168,6 +1193,7 @@ define(['N/record', 'N/search', 'N/log'], function (record, search, log) {
     return {
         getInputData: getInputData,
         map: map,
+        reduce: reduce,
         summarize: summarize
     };
 });
